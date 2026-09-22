@@ -1,0 +1,32 @@
+name: when_is_bin_app
+description: "Find your UK bin collection days and get a reminder the night before."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  provider: ^6.1.2
+  http: ^1.2.2
+  flutter_local_notifications: ^18.0.1
+  timezone: ^0.10.0
+  shared_preferences: ^2.3.3
+  intl: ^0.20.0
+  url_launcher: ^6.3.1
+  flutter_dotenv: ^5.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
