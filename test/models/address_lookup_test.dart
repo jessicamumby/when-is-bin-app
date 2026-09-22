@@ -34,8 +34,8 @@ void main() {
       expect(lookup.postcodeRepresentative, 'opt_in');
       expect(lookup.candidatesSource, 'council');
       expect(lookup.candidates, hasLength(1));
-      expect(lookup.candidates!.first.id, 'p:4c5ee6c2f2c7c959');
-      expect(lookup.candidates!.first.label,
+      expect(lookup.candidates.first.id, 'p:4c5ee6c2f2c7c959');
+      expect(lookup.candidates.first.label,
           '15 EXAMPLE COURT, EXAMPLE ROAD, CAMBRIDGE, CB4 2HX');
     });
 
@@ -84,7 +84,7 @@ void main() {
       expect(lookup.inputOptions?.needsMoreQuery, isTrue);
       expect(lookup.inputOptions?.notListedValue, '__not_listed__');
       expect(lookup.inputOptions?.options, hasLength(1));
-      expect(lookup.inputOptions?.options!.first.value,
+      expect(lookup.inputOptions?.options.first.value,
           'A70--Glenbrook Rd To B7031');
     });
   });

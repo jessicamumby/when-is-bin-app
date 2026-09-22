@@ -86,8 +86,8 @@ void main() {
       expect(schedule.council?.name, 'Cambridge City Council');
       expect(schedule.collections, hasLength(1));
       expect(schedule.byDate, hasLength(1));
-      expect(schedule.byDate!.first.date, '2026-09-10');
-      expect(schedule.byDate!.first.weekday, 'Thursday');
+      expect(schedule.byDate.first.date, '2026-09-10');
+      expect(schedule.byDate.first.weekday, 'Thursday');
       expect(schedule.dateConfidence, 'published_calendar');
       expect(schedule.dateCompleteness, 'limited_horizon');
       expect(schedule.evidenceGranularity, 'property');
