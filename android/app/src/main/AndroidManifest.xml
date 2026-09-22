@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Notifications for bin collection reminders (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Schedule exact alarms for reliable reminder delivery -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
-        android:label="when_is_bin_app"
+        android:label="When Is Bin App"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
