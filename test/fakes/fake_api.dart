@@ -13,6 +13,20 @@ class FakeWhenIsBinsApi implements WhenIsBinsApi {
   int lookupCallCount = 0;
   int createLookupCalls = 0;
 
+  /// Every body passed to `createLookup`, so a test can assert the exact
+  /// address shape a journey sends.
+  List<Map<String, dynamic>> lookupBodies = [];
+  Map<String, dynamic>? get lastLookupBody =>
+      lookupBodies.isEmpty ? null : lookupBodies.last;
+
+  /// The postcode and `q` of each `getAddresses` call, and the answers to give
+  /// them in turn (the last repeats once exhausted). Empty means every call
+  /// gets [addressLookup].
+  List<String?> addressQueries = [];
+  List<AddressLookup> addressLookupResponses = [];
+  int addressCallCount = 0;
+  String? lastAddressQuery;
+
   /// The answers to `waitForLookup`, in order. The last one repeats once the
   /// list is exhausted, so an "always still running" server is one entry.
   List<Lookup> waitResponses = [];
@@ -50,7 +64,15 @@ class FakeWhenIsBinsApi implements WhenIsBinsApi {
   @override
   Future<AddressLookup> getAddresses(String postcode, {String? q}) async {
     lastPostcode = postcode;
+    lastAddressQuery = q;
+    addressQueries.add(q);
+    final index = addressCallCount++;
     if (error != null) throw error!;
+    if (addressLookupResponses.isNotEmpty) {
+      return index < addressLookupResponses.length
+          ? addressLookupResponses[index]
+          : addressLookupResponses.last;
+    }
     return addressLookup ??
         AddressLookup(postcode: postcode, requiredInput: 'none');
   }
@@ -61,6 +83,7 @@ class FakeWhenIsBinsApi implements WhenIsBinsApi {
     required String idempotencyKey,
   }) async {
     createLookupCalls++;
+    lookupBodies.add(body);
     lastIdempotencyKey = idempotencyKey;
     if (error != null) throw error!;
     if (lookupResponses.isEmpty) {

@@ -5,6 +5,7 @@ import '../core/theme.dart';
 import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/when_is_bins_api.dart';
+import 'address_entry_screen.dart';
 import 'address_select_screen.dart';
 import 'schedule_screen.dart';
 import 'settings_screen.dart';
@@ -76,12 +77,14 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
     } else {
-      // No candidate list — the council needs free-text input. For now we
-      // surface the required input as a message.
-      setState(() {
-        _validationError =
-            'This council needs more information. Please try again later.';
-      });
+      // No candidate list: the council needs an address, a street, an area, a
+      // weekday or a property type. The form is driven by the lookup's own
+      // `required_input`, so every remaining journey is reachable from here.
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AddressEntryScreen(addressLookup: addressLookup),
+        ),
+      );
     }
   }
 

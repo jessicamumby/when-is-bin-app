@@ -430,4 +430,200 @@ void main() {
       expect(provider.schedule, isNotNull);
     });
   });
+
+  group('LookupProvider.submitLookup', () {
+    Schedule submittedSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'exact',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+      );
+    }
+
+    test('sends the postcode plus the address fields the user gave', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'done')];
+      final provider = LookupProvider(api: api);
+
+      await provider.submitLookup(
+        postcode: 'EH14 7AL',
+        address: const {'street': 'A70--Glenbrook Rd To B7031'},
+      );
+
+      expect(api.lastLookupBody, {
+        'postcode': 'EH14 7AL',
+        'street': 'A70--Glenbrook Rd To B7031',
+      });
+    });
+
+    test('a postcode-only journey sends no address fields', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'done')];
+      final provider = LookupProvider(api: api);
+
+      await provider.submitLookup(postcode: 'CB4 2HX', address: const {});
+
+      expect(api.lastLookupBody, {'postcode': 'CB4 2HX'});
+    });
+
+    test('waits for the lookup and applies the schedule', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'done', result: submittedSchedule()),
+        ];
+      final provider = LookupProvider(api: api);
+
+      await provider.submitLookup(
+        postcode: 'EH14 7AL',
+        address: const {'property': '15 Example Court'},
+      );
+
+      expect(api.createLookupCalls, 1);
+      expect(api.waitCallCount, 1,
+          reason: 'the general path reuses the /wait long-poll');
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+      expect(provider.isLoading, isFalse);
+      expect(provider.error, isNull);
+    });
+
+    test('sends a valid idempotency key (visible ASCII, no spaces)', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'done')];
+      final provider = LookupProvider(api: api);
+
+      await provider.submitLookup(
+        postcode: 'CB4 2HX',
+        address: const {'property': '15 Example Court'},
+      );
+
+      final key = api.lastIdempotencyKey!;
+      expect(key.length, inInclusiveRange(1, 128));
+      expect(key, isNot(contains(RegExp(r'\s'))),
+          reason: 'Idempotency-Key must not contain whitespace');
+      expect(RegExp(r'^[\x21-\x7E]+$').hasMatch(key), isTrue,
+          reason: 'Idempotency-Key must be visible ASCII only');
+    });
+
+    test('surfaces a failed lookup and clears the schedule', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [
+          Lookup(
+            id: 'lookup-1',
+            status: 'failed',
+            detail: "The council's system doesn't list that road.",
+          ),
+        ];
+      final provider = LookupProvider(api: api);
+
+      await provider.submitLookup(
+        postcode: 'EH14 7AL',
+        address: const {'street': 'Nowhere Road'},
+      );
+
+      expect(provider.schedule, isNull);
+      expect(provider.error?.detail,
+          "The council's system doesn't list that road.");
+      expect(provider.pendingLookupId, isNull);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('selectAddress submits the candidate through the same path', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'done', result: submittedSchedule()),
+        ];
+      final provider = LookupProvider(api: api);
+
+      await provider.selectAddress(_candidate, postcode: 'CB4 2HX');
+
+      expect(api.lastLookupBody, {
+        'postcode': 'CB4 2HX',
+        'property_id': 'p:4c5ee6c2f2c7c959',
+      });
+      expect(api.waitCallCount, 1);
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+    });
+  });
+
+  group('LookupProvider.refineAddressLookup', () {
+    AddressLookup streetLookup({List<InputOption> options = const []}) {
+      return AddressLookup(
+        postcode: 'EH14 7AL',
+        requiredInput: 'street',
+        inputOptions: InputOptions(
+          field: 'street',
+          needsMoreQuery: true,
+          notListedValue: '__not_listed__',
+          options: options,
+        ),
+      );
+    }
+
+    test('re-asks /addresses with the narrower q and keeps the answer',
+        () async {
+      final api = FakeWhenIsBinsApi()
+        ..addressLookupResponses = [
+          streetLookup(),
+          streetLookup(
+            options: const [
+              InputOption(
+                value: 'A70--Glenbrook Rd To B7031',
+                label: 'A70--Glenbrook Rd To B7031',
+              ),
+            ],
+          ),
+        ];
+      final provider = LookupProvider(api: api);
+      await provider.lookupPostcode('EH14 7AL');
+
+      await provider.refineAddressLookup('A70');
+
+      expect(api.lastPostcode, 'EH14 7AL',
+          reason: 'the postcode is still the one being resolved');
+      expect(api.lastAddressQuery, 'A70');
+      expect(provider.addressLookup?.inputOptions?.options, hasLength(1));
+      expect(provider.addressLookup?.inputOptions?.options.first.label,
+          'A70--Glenbrook Rd To B7031');
+      expect(provider.isLoading, isFalse);
+      expect(provider.error, isNull);
+    });
+
+    test('surfaces a failed re-query but keeps the options on screen',
+        () async {
+      final api = FakeWhenIsBinsApi()
+        ..addressLookupResponses = [streetLookup()];
+      final provider = LookupProvider(api: api);
+      await provider.lookupPostcode('EH14 7AL');
+
+      api.error = const ApiException(
+        statusCode: 429,
+        problem: 'rate_limited',
+        detail: 'Slow down.',
+      );
+      await provider.refineAddressLookup('A70');
+
+      expect(provider.error?.problem, 'rate_limited');
+      expect(provider.addressLookup, isNotNull,
+          reason: 'losing the list would strand the user mid-form');
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('does nothing before a postcode is known', () async {
+      final api = FakeWhenIsBinsApi();
+      final provider = LookupProvider(api: api);
+
+      await provider.refineAddressLookup('A70');
+
+      expect(api.addressQueries, isEmpty);
+      expect(provider.isLoading, isFalse);
+    });
+  });
 }
