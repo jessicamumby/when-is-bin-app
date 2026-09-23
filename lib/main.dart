@@ -143,7 +143,12 @@ class _WhenIsBinAppState extends State<WhenIsBinApp> {
       title: 'When is bin day',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
-      themeMode: ThemeMode.system,
+      // The app mirrors the light whenisbins.com design system, so it does not
+      // follow the phone into dark mode: a dark-mode device must not repaint
+      // the main screens dark while onboarding stays light. Pinning the mode
+      // here fixes it at the root, for every route, rather than wrapping each
+      // screen in its own light theme.
+      themeMode: ThemeMode.light,
       // An onboarded user who still has their saved address sees their bin
       // days directly — they've already found their bin day, so the search
       // form would be noise. Clearing the saved address (from Settings)
