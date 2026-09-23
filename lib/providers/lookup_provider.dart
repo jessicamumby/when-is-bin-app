@@ -75,6 +75,16 @@ class LookupProvider extends ChangeNotifier {
     }
   }
 
+  /// Hydrate the schedule from data persisted by `SettingsProvider`, so the
+  /// saved-address shortcut renders real bin days on a cold start without
+  /// another lookup. A null [schedule] (nothing saved) is a no-op.
+  void restoreSchedule(Schedule? schedule) {
+    if (schedule == null) return;
+    _error = null;
+    _schedule = schedule;
+    notifyListeners();
+  }
+
   Future<Lookup> _pollUntilSettled(Lookup initial) async {
     var lookup = initial;
     while (lookup.isPending) {

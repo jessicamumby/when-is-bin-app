@@ -117,4 +117,73 @@ void main() {
           "The council's system doesn't list that exact address.");
     });
   });
+
+  group('LookupProvider.restoreSchedule', () {
+    Schedule savedSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'exact',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+        byDate: [
+          ByDateEntry(
+            date: '2026-09-10',
+            weekday: 'Thursday',
+            collections: [
+              ByDateCollection(name: 'Black bin', wasteType: 'refuse'),
+            ],
+          ),
+        ],
+        calendarUrl: 'https://whenisbins.com/100023336956.ics',
+      );
+    }
+
+    test('hydrates the schedule from persisted data and notifies', () {
+      final provider = LookupProvider(api: FakeWhenIsBinsApi());
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      provider.restoreSchedule(savedSchedule());
+
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+      expect(provider.schedule?.collections.single.name, 'Black bin');
+      expect(provider.schedule?.byDate.single.date, '2026-09-10');
+      expect(provider.schedule?.calendarUrl,
+          'https://whenisbins.com/100023336956.ics');
+      expect(notifications, 1);
+    });
+
+    test('does nothing when there is no persisted schedule', () {
+      final provider = LookupProvider(api: FakeWhenIsBinsApi());
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      provider.restoreSchedule(null);
+
+      expect(provider.schedule, isNull);
+      expect(notifications, 0);
+    });
+
+    test('clears a previous error', () async {
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 404,
+          problem: 'postcode_outside_coverage',
+          detail: 'Postcode is outside coverage.',
+        );
+      final provider = LookupProvider(api: api);
+      await provider.lookupPostcode('ZZ99 9ZZ');
+      expect(provider.error, isNotNull);
+
+      provider.restoreSchedule(savedSchedule());
+
+      expect(provider.error, isNull);
+      expect(provider.schedule, isNotNull);
+    });
+  });
 }

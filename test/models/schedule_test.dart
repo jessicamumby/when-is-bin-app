@@ -118,4 +118,83 @@ void main() {
       expect(schedule.calendarUrl, isNull);
     });
   });
+
+  group('Collection.toJson', () {
+    test('writes every field with the API snake_case keys', () {
+      const collection = Collection(
+        name: 'Black bin',
+        wasteType: 'refuse',
+        dates: ['2026-09-10', '2026-09-24'],
+        datesComplete: true,
+        binColour: 'black',
+        lidColour: 'grey',
+        colourSource: 'council',
+        container: 'wheelie_bin',
+        subscriptionRequired: true,
+      );
+
+      final json = collection.toJson();
+
+      expect(json['name'], 'Black bin');
+      expect(json['waste_type'], 'refuse');
+      expect(json['dates'], ['2026-09-10', '2026-09-24']);
+      expect(json['dates_complete'], isTrue);
+      expect(json['bin_colour'], 'black');
+      expect(json['lid_colour'], 'grey');
+      expect(json['colour_source'], 'council');
+      expect(json['container'], 'wheelie_bin');
+      expect(json['subscription_required'], isTrue);
+    });
+
+    test('round-trips through fromJson without losing data', () {
+      const collection = Collection(
+        name: 'Garden waste',
+        wasteType: 'garden',
+        dates: ['2026-09-12'],
+      );
+
+      final restored = Collection.fromJson(collection.toJson());
+
+      expect(restored.name, 'Garden waste');
+      expect(restored.wasteType, 'garden');
+      expect(restored.dates, ['2026-09-12']);
+      expect(restored.datesComplete, isFalse);
+      expect(restored.subscriptionRequired, isFalse);
+    });
+  });
+
+  group('ByDateEntry.toJson', () {
+    test('round-trips the date, weekday and collections', () {
+      const entry = ByDateEntry(
+        date: '2026-09-10',
+        weekday: 'Thursday',
+        collections: [
+          ByDateCollection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            subscriptionRequired: true,
+          ),
+        ],
+      );
+
+      final json = entry.toJson();
+
+      expect(json['date'], '2026-09-10');
+      expect(json['weekday'], 'Thursday');
+      final collections = json['collections'] as List<dynamic>;
+      expect(collections, hasLength(1));
+      expect((collections.first as Map<String, dynamic>)['name'], 'Black bin');
+      expect(
+        (collections.first as Map<String, dynamic>)['waste_type'],
+        'refuse',
+      );
+
+      final restored = ByDateEntry.fromJson(json);
+      expect(restored.date, '2026-09-10');
+      expect(restored.weekday, 'Thursday');
+      expect(restored.collections.single.name, 'Black bin');
+      expect(restored.collections.single.wasteType, 'refuse');
+      expect(restored.collections.single.subscriptionRequired, isTrue);
+    });
+  });
 }

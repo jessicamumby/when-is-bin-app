@@ -39,6 +39,20 @@ class Collection {
       subscriptionRequired: json['subscription_required'] as bool? ?? false,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'waste_type': wasteType,
+      'dates': dates,
+      'dates_complete': datesComplete,
+      'bin_colour': binColour,
+      'lid_colour': lidColour,
+      'colour_source': colourSource,
+      'container': container,
+      'subscription_required': subscriptionRequired,
+    };
+  }
 }
 
 /// The services due on a single collection date.
@@ -62,6 +76,14 @@ class ByDateEntry {
           .toList(),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'date': date,
+      'weekday': weekday,
+      'collections': collections.map((c) => c.toJson()).toList(),
+    };
+  }
 }
 
 class ByDateCollection {
@@ -81,6 +103,14 @@ class ByDateCollection {
       wasteType: json['waste_type'] as String,
       subscriptionRequired: json['subscription_required'] as bool? ?? false,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'waste_type': wasteType,
+      'subscription_required': subscriptionRequired,
+    };
   }
 }
 
