@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:when_is_bin_app/models/address_lookup.dart';
 import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/home_screen.dart';
@@ -161,5 +162,83 @@ void main() {
     expect(find.text(nextCollectionLabel), findsOneWidget);
     expect(find.text('Put out: Black bin'), findsOneWidget);
     expect(find.text('15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX'), findsOneWidget);
+  });
+
+  Future<void> submitPostcode(WidgetTester tester, String postcode) async {
+    await tester.enterText(find.byType(TextField), postcode);
+    await tester.tap(find.text('Find my bin day'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('a council with a candidate list opens the address picker',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..addressLookup = AddressLookup(
+        postcode: 'CB4 2HX',
+        requiredInput: 'property_id',
+        council: const Council(id: 'E07000008', name: 'Cambridge City Council'),
+        candidates: const [
+          AddressCandidate(
+            id: 'p:4c5ee6c2f2c7c959',
+            label: '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+          ),
+        ],
+      );
+
+    await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+    await submitPostcode(tester, 'CB4 2HX');
+
+    expect(find.text('15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX'), findsOneWidget);
+  });
+
+  testWidgets('a council that needs more than a postcode opens the address form',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..addressLookup = AddressLookup(
+        postcode: 'EH14 7AL',
+        requiredInput: 'street',
+        council: const Council(id: 'S12000036', name: 'City of Edinburgh Council'),
+        inputOptions: const InputOptions(
+          field: 'street',
+          needsMoreQuery: false,
+          notListedValue: '__not_listed__',
+          options: [
+            InputOption(value: 'A70--Glenbrook', label: 'A70--Glenbrook'),
+          ],
+        ),
+      );
+
+    await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+    await submitPostcode(tester, 'EH14 7AL');
+
+    expect(find.text('A few more details'), findsOneWidget);
+    expect(find.text('A70--Glenbrook'), findsOneWidget);
+    expect(
+      find.text('This council needs more information. Please try again later.'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a postcode-only council goes straight to the form that submits it',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..addressLookup = AddressLookup(
+        postcode: 'CB4 2HX',
+        requiredInput: 'none',
+        council: const Council(id: 'E07000008', name: 'Cambridge City Council'),
+      );
+
+    await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+    await submitPostcode(tester, 'CB4 2HX');
+
+    expect(find.text('A few more details'), findsOneWidget);
+    expect(find.text('Find my bin day'), findsOneWidget);
+    expect(
+      find.text('This council needs more information. Please try again later.'),
+      findsNothing,
+    );
   });
 }

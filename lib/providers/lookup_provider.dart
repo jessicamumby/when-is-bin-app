@@ -71,10 +71,18 @@ class LookupProvider extends ChangeNotifier {
     }
   }
 
-  /// Submit a selected address and wait until the lookup settles.
-  Future<void> selectAddress(
-    AddressCandidate candidate, {
+  /// Submit any address shape a council asked for and wait until the lookup
+  /// settles.
+  ///
+  /// [address] holds the fields the council's `required_input` called for —
+  /// `property`, `street`, `locality`, `normal_weekday`, `property_type` — or
+  /// `property_id` for a picked candidate, and is spread into the body beside
+  /// the postcode. A fresh idempotency key per submission, and the shared
+  /// `/wait` long-poll, mean every journey is submitted exactly like the
+  /// candidate journey is.
+  Future<void> submitLookup({
     required String postcode,
+    required Map<String, dynamic> address,
   }) async {
     _error = null;
     _pendingLookupId = null;
@@ -82,13 +90,46 @@ class LookupProvider extends ChangeNotifier {
     notifyListeners();
     try {
       final lookup = await _api.createLookup(
-        {'postcode': postcode, 'property_id': candidate.id},
+        {'postcode': postcode, ...address},
         idempotencyKey: _newIdempotencyKey(),
       );
       _applySettled(await _pollUntilSettled(lookup));
     } on ApiException catch (e) {
       _error = e;
       _schedule = null;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Submit a selected address and wait until the lookup settles.
+  Future<void> selectAddress(
+    AddressCandidate candidate, {
+    required String postcode,
+  }) {
+    return submitLookup(
+      postcode: postcode,
+      address: {'property_id': candidate.id},
+    );
+  }
+
+  /// Re-ask `/addresses` with a narrower `q` — the follow-up to a council that
+  /// answered `input_options.needs_more_query`.
+  ///
+  /// A failed re-query keeps the options already on screen: losing the list the
+  /// user was picking from would strand them mid-form, and the error tells them
+  /// to try again.
+  Future<void> refineAddressLookup(String q) async {
+    final postcode = _postcode;
+    if (postcode == null) return;
+    _error = null;
+    _isLoading = true;
+    notifyListeners();
+    try {
+      _addressLookup = await _api.getAddresses(postcode, q: q);
+    } on ApiException catch (e) {
+      _error = e;
     } finally {
       _isLoading = false;
       notifyListeners();
