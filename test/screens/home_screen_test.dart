@@ -134,7 +134,8 @@ void main() {
     expect(find.text('Find your bin day'), findsNothing);
   });
 
-  testWidgets('hydrates the saved schedule on a cold start', (tester) async {
+  testWidgets('the saved-address shortcut hydrates the schedule',
+      (tester) async {
     final settings = await makeSettings(
       address: '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
       postcode: 'CB4 2HX',
@@ -144,7 +145,8 @@ void main() {
     final lookup = LookupProvider(api: FakeWhenIsBinsApi());
 
     await tester.pumpWidget(buildApp(settings, lookup));
-    await tester.pump();
+    await tester.tap(find.text('View your bin days'));
+    await tester.pumpAndSettle();
 
     expect(lookup.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
     expect(lookup.schedule?.collections.single.name, 'Black bin');

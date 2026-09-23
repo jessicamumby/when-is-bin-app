@@ -26,14 +26,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Cold start: a saved address carries a persisted schedule, so hydrate it
-    // straight away rather than waiting for the user to tap through.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final settings = context.read<SettingsProvider>();
-      if (settings.savedAddress == null) return;
-      context.read<LookupProvider>().restoreSchedule(settings.savedSchedule);
-    });
+    // The schedule hydration from saved preferences is handled by
+    // WhenIsBinApp so it works regardless of which screen is shown.
   }
 
   @override
