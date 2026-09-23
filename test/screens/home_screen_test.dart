@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:when_is_bin_app/core/theme.dart';
 import 'package:when_is_bin_app/models/address_lookup.dart';
 import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
@@ -63,15 +64,22 @@ void main() {
     return SettingsProvider(await SharedPreferences.getInstance());
   }
 
-  Widget buildApp(SettingsProvider settings, LookupProvider lookup) {
+  Widget buildApp(
+    SettingsProvider settings,
+    LookupProvider lookup, {
+    ThemeData? theme,
+  }) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => lookup),
         ChangeNotifierProvider(create: (_) => settings),
       ],
-      child: const MaterialApp(home: HomeScreen()),
+      child: MaterialApp(theme: theme, home: const HomeScreen()),
     );
   }
+
+  Color? textColour(WidgetTester tester, Finder finder) =>
+      tester.widget<Text>(finder).style?.color;
 
   testWidgets('shows the postcode entry form', (tester) async {
     final settings = await makeSettings();
@@ -240,5 +248,107 @@ void main() {
       find.text('This council needs more information. Please try again later.'),
       findsNothing,
     );
+  });
+
+  testWidgets('rejects a malformed postcode without asking the council',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi();
+
+    await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+    await tester.enterText(find.byType(TextField), '12345');
+    await tester.tap(find.text('Find my bin day'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Enter a valid UK postcode, for example CB4 2HX.'),
+      findsOneWidget,
+    );
+    expect(api.addressCallCount, 0);
+  });
+
+  testWidgets('rejects a postcode that is missing its inward code',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi();
+
+    await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+    await tester.enterText(find.byType(TextField), 'CB4 2H');
+    await tester.tap(find.text('Find my bin day'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Enter a valid UK postcode, for example CB4 2HX.'),
+      findsOneWidget,
+    );
+    expect(api.addressCallCount, 0);
+  });
+
+  testWidgets('accepts a postcode typed without the usual space or case',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..addressLookup =
+          AddressLookup(postcode: 'CB4 2HX', requiredInput: 'none');
+
+    await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+    await tester.enterText(find.byType(TextField), 'cb42hx');
+    await tester.tap(find.text('Find my bin day'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter a valid UK postcode, for example CB4 2HX.'),
+        findsNothing);
+    expect(api.addressCallCount, 1);
+  });
+
+  group('dark mode', () {
+    testWidgets('renders its tokens for the active brightness',
+        (tester) async {
+      final settings = await makeSettings();
+
+      await tester.pumpWidget(
+        buildApp(
+          settings,
+          LookupProvider(api: FakeWhenIsBinsApi()),
+          theme: AppTheme.dark,
+        ),
+      );
+
+      expect(
+        textColour(tester, find.text('Find your bin day')),
+        AppColors.inkLight,
+      );
+      expect(
+        textColour(
+          tester,
+          find.textContaining('This service shows household bin collections'),
+        ),
+        AppColors.mutedDark,
+      );
+    });
+
+    testWidgets('keeps its light tokens in light mode', (tester) async {
+      final settings = await makeSettings();
+
+      await tester.pumpWidget(
+        buildApp(
+          settings,
+          LookupProvider(api: FakeWhenIsBinsApi()),
+          theme: AppTheme.light,
+        ),
+      );
+
+      expect(
+        textColour(tester, find.text('Find your bin day')),
+        AppColors.ink,
+      );
+      expect(
+        textColour(
+          tester,
+          find.textContaining('This service shows household bin collections'),
+        ),
+        AppColors.muted,
+      );
+    });
   });
 }

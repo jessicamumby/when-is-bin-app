@@ -119,6 +119,8 @@ class WhenIsBinApp extends StatelessWidget {
     return MaterialApp(
       title: 'When is bin day',
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
       home: const HomeScreen(),
     );
   }

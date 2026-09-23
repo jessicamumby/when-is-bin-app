@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:when_is_bin_app/core/theme.dart';
 import 'package:when_is_bin_app/models/address_lookup.dart';
 import 'package:when_is_bin_app/models/lookup.dart';
 import 'package:when_is_bin_app/models/schedule.dart';
@@ -55,15 +56,70 @@ void main() {
     );
   }
 
-  Widget buildApp(LookupProvider lookup, SettingsProvider settings) {
+  Widget buildApp(
+    LookupProvider lookup,
+    SettingsProvider settings, {
+    ThemeData? theme,
+  }) {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => lookup),
         ChangeNotifierProvider(create: (_) => settings),
       ],
-      child: MaterialApp(home: AddressSelectScreen(addressLookup: addressLookup)),
+      child: MaterialApp(
+        theme: theme,
+        home: AddressSelectScreen(addressLookup: addressLookup),
+      ),
     );
   }
+
+  Color? textColour(WidgetTester tester, Finder finder) =>
+      tester.widget<Text>(finder).style?.color;
+
+  testWidgets('renders its own tokens for the active brightness',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      buildApp(
+        LookupProvider(api: FakeWhenIsBinsApi()),
+        SettingsProvider(await SharedPreferences.getInstance()),
+        theme: AppTheme.dark,
+      ),
+    );
+
+    expect(
+      textColour(tester, find.text('Cambridge City Council \u2022 CB4 2HX')),
+      AppColors.mutedDark,
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.home_outlined)).color,
+      AppColors.tealDark,
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.chevron_right)).color,
+      AppColors.mutedDark,
+    );
+  });
+
+  testWidgets('keeps its light tokens in light mode', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      buildApp(
+        LookupProvider(api: FakeWhenIsBinsApi()),
+        SettingsProvider(await SharedPreferences.getInstance()),
+        theme: AppTheme.light,
+      ),
+    );
+
+    expect(
+      textColour(tester, find.text('Cambridge City Council \u2022 CB4 2HX')),
+      AppColors.muted,
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.home_outlined)).color,
+      AppColors.teal,
+    );
+  });
 
   Widget buildHome(LookupProvider lookup, SettingsProvider settings) {
     return MultiProvider(

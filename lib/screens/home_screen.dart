@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/postcode.dart';
 import '../core/theme.dart';
 import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
@@ -51,9 +52,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _submit() async {
-    final postcode = _postcodeController.text.trim().toUpperCase();
+    final postcode = UkPostcode.normalise(_postcodeController.text);
     if (postcode.isEmpty) {
       setState(() => _validationError = 'Enter a postcode.');
+      return;
+    }
+    // Checked here, before the network: a value that is not a postcode shape
+    // costs nothing to reject, and the user gets the answer immediately.
+    if (!UkPostcode.isValid(postcode)) {
+      setState(
+        () => _validationError =
+            'Enter a valid UK postcode, for example CB4 2HX.',
+      );
       return;
     }
     setState(() => _validationError = null);
@@ -103,6 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     final lookup = context.watch<LookupProvider>();
+    final brightness = Theme.of(context).brightness;
 
     return Scaffold(
       appBar: AppBar(
@@ -124,14 +135,14 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Find your bin day',
               style: TextStyle(
                 fontSize: 40,
                 height: 1.05,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.5,
-                color: AppColors.ink,
+                color: AppColors.inkFor(brightness),
               ),
             ),
             const SizedBox(height: 16),
@@ -178,9 +189,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'This service shows household bin collections. Businesses, public buildings and some new homes usually are not in a council\u2019s household collection records.',
-              style: TextStyle(fontSize: 16, color: AppColors.muted),
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.mutedFor(brightness),
+              ),
             ),
           ],
         ),
