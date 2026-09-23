@@ -82,9 +82,9 @@ jobs:
 
           check "android.permission.INTERNET" \
             "The release manifest has no INTERNET permission, so the shipped app cannot reach the WhenIsBins API. It belongs in src/main/AndroidManifest.xml, not only in the debug/profile manifests."
-          check "interlocalnotifications.ScheduledNotificationReceiver" \
+          check "com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" \
             "The scheduled-notification receiver is missing, so reminder broadcasts have no recipient and no notification is ever posted."
-          check "interlocalnotifications.ScheduledNotificationBootReceiver" \
+          check "com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver" \
             "The boot receiver is missing, so reminders do not survive a restart."
           absent "SCHEDULE_EXACT_ALARM" \
             "The exact-alarm permission is declared but reminders are scheduled with inexactAllowWhileIdle."
