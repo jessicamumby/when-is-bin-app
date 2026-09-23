@@ -11,6 +11,7 @@ import 'core/theme.dart';
 import 'providers/lookup_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'services/notification_service.dart';
 import 'services/reminder_sync_service.dart';
 import 'services/schedule_refresh_service.dart';
@@ -116,12 +117,16 @@ class WhenIsBinApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settings = context.watch<SettingsProvider>();
+
     return MaterialApp(
       title: 'When is bin day',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      home: const HomeScreen(),
+      home: settings.isOnboarded
+          ? const HomeScreen()
+          : const OnboardingScreen(),
     );
   }
 }

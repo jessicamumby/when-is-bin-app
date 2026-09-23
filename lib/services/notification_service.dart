@@ -89,13 +89,16 @@ class NotificationService implements NotificationScheduler {
   }
 
   /// Initialise the plugin and the time zone reminders are built in.
+  ///
+  /// Permission is requested explicitly (e.g. during onboarding), not at
+  /// startup.
   Future<void> init() async {
     configureLocalTimeZone();
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwin = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
     await _plugin.initialize(
       const InitializationSettings(android: android, iOS: darwin),

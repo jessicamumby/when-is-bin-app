@@ -9,15 +9,43 @@ import 'schedule_screen.dart';
 
 /// Lets the user pick their address from the council's candidate list.
 class AddressSelectScreen extends StatelessWidget {
-  const AddressSelectScreen({super.key, required this.addressLookup});
+  const AddressSelectScreen({
+    super.key,
+    required this.addressLookup,
+    this.forceLight = false,
+  });
 
   final AddressLookup addressLookup;
+
+  /// When true, the screen always renders in the light design system. Used by
+  /// onboarding, which is light-only; the main app leaves it false so it
+  /// follows the system theme.
+  final bool forceLight;
 
   @override
   Widget build(BuildContext context) {
     final lookup = context.watch<LookupProvider>();
     final settings = context.read<SettingsProvider>();
 
+    // The Theme must wrap the screen so every Theme.of(context) inside the
+    // body resolves the light theme, not the app's dark theme. A Builder
+    // re-reads the wrapped context so the body sees the light theme.
+    return forceLight
+        ? Theme(
+            data: AppTheme.light,
+            child: Builder(
+              builder: (lightContext) =>
+                  _buildScreen(lightContext, lookup, settings),
+            ),
+          )
+        : _buildScreen(context, lookup, settings);
+  }
+
+  Widget _buildScreen(
+    BuildContext context,
+    LookupProvider lookup,
+    SettingsProvider settings,
+  ) {
     return Scaffold(
       appBar: AppBar(title: const Text('Select your address')),
       body: SingleChildScrollView(
@@ -61,11 +89,18 @@ class AddressSelectScreen extends StatelessWidget {
                       );
                       await settings.saveSchedule(schedule);
                       if (!context.mounted) return;
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (_) => const ScheduleScreen(),
-                        ),
-                      );
+                      if (forceLight) {
+                        // Onboarding: return to the onboarding screen, which
+                        // now shows the reminder step (schedule is set).
+                        Navigator.of(context).pop();
+                      } else {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ScheduleScreen(forceLight: forceLight),
+                          ),
+                        );
+                      }
                     } else if (lookup.error != null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -110,7 +145,10 @@ class _AddressTile extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             Icon(

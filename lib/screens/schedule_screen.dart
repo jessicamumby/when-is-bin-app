@@ -13,7 +13,12 @@ import 'settings_screen.dart';
 
 /// Shows the bin collection schedule and lets the user set reminders.
 class ScheduleScreen extends StatefulWidget {
-  const ScheduleScreen({super.key});
+  const ScheduleScreen({super.key, this.forceLight = false});
+
+  /// When true, the screen always renders in the light design system. Used by
+  /// onboarding, which is light-only; the main app leaves it false so it
+  /// follows the system theme.
+  final bool forceLight;
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -26,73 +31,94 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget build(BuildContext context) {
     final lookup = context.watch<LookupProvider>();
     final settings = context.watch<SettingsProvider>();
+
+    // The Theme must wrap the screen so every Theme.of(context) inside the
+    // body resolves the light theme, not the app's dark theme. A Builder
+    // re-reads the wrapped context so the body sees the light theme.
+    return widget.forceLight
+        ? Theme(
+            data: AppTheme.light,
+            child: Builder(
+              builder: (lightContext) =>
+                  _buildScreen(lightContext, lookup, settings),
+            ),
+          )
+        : _buildScreen(context, lookup, settings);
+  }
+
+  Widget _buildScreen(
+    BuildContext context,
+    LookupProvider lookup,
+    SettingsProvider settings,
+  ) {
     final schedule = lookup.schedule;
     final muted = AppColors.mutedFor(Theme.of(context).brightness);
 
-    if (schedule == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Your bin days')),
-        body: _placeholder(lookup),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Your bin days'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Settings',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Your bin days',
-              style: Theme.of(context).textTheme.headlineLarge,
+    return schedule == null
+        ? Scaffold(
+            appBar: AppBar(title: const Text('Your bin days')),
+            body: _placeholder(lookup),
+          )
+        : Scaffold(
+            appBar: AppBar(
+              title: const Text('Your bin days'),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: 'Settings',
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                    );
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            if (settings.savedAddress != null)
-              Text(
-                settings.savedAddress!,
-                style: TextStyle(fontSize: 16, color: muted),
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Your bin days',
+                    style: Theme.of(context).textTheme.headlineLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  if (settings.savedAddress != null)
+                    Text(
+                      settings.savedAddress!,
+                      style: TextStyle(fontSize: 16, color: muted),
+                    ),
+                  const SizedBox(height: 24),
+                  _NextCollectionCard(schedule: schedule),
+                  const SizedBox(height: 24),
+                  _ReminderCard(
+                    enabled: settings.remindersEnabled,
+                    scheduling: _scheduling,
+                    reminderTime: settings.reminderTime,
+                    provisional: schedule.provisional,
+                    onToggle: (value) =>
+                        _toggleReminders(value, schedule, settings),
+                    onOpenSettings: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  if (schedule.calendarUrl != null)
+                    _CalendarCard(calendarUrl: schedule.calendarUrl!),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Collection dates come from your council\u2019s own website and can change at short notice.',
+                    style: TextStyle(fontSize: 16, color: muted),
+                  ),
+                ],
               ),
-            const SizedBox(height: 24),
-            _NextCollectionCard(schedule: schedule),
-            const SizedBox(height: 24),
-            _ReminderCard(
-              enabled: settings.remindersEnabled,
-              scheduling: _scheduling,
-              reminderTime: settings.reminderTime,
-              provisional: schedule.provisional,
-              onToggle: (value) => _toggleReminders(value, schedule, settings),
-              onOpenSettings: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                );
-              },
             ),
-            const SizedBox(height: 24),
-            if (schedule.calendarUrl != null)
-              _CalendarCard(calendarUrl: schedule.calendarUrl!),
-            const SizedBox(height: 24),
-            Text(
-              'Collection dates come from your council\u2019s own website and can change at short notice.',
-              style: TextStyle(fontSize: 16, color: muted),
-            ),
-          ],
-        ),
-      ),
-    );
+          );
   }
 
   /// The screen with nothing to show yet: still loading, failed, or simply
@@ -229,15 +255,18 @@ String? scheduleDateCaveat(Schedule schedule) {
 
 const Map<String, String> _completenessCaveats = {
   'next_only': 'These dates cover the next collection only.',
-  'limited_horizon': 'Your council has only published dates for the next few '
+  'limited_horizon':
+      'Your council has only published dates for the next few '
       'weeks.',
-  'weekday_only': 'Your council publishes the collection weekday only, so the '
+  'weekday_only':
+      'Your council publishes the collection weekday only, so the '
       'exact date may change.',
 };
 
 const Map<String, String> _confidenceCaveats = {
   'next_collection_only': 'These dates cover the next collection only.',
-  'council_projection': 'This council has not published a full calendar, so '
+  'council_projection':
+      'This council has not published a full calendar, so '
       'these dates are a projection.',
 };
 
@@ -249,8 +278,9 @@ class _NextCollectionDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formatted =
-        DateFormat('EEEE d MMMM yyyy').format(DateTime.parse(next.date));
+    final formatted = DateFormat(
+      'EEEE d MMMM yyyy',
+    ).format(DateTime.parse(next.date));
     final bins = next.collections.map((c) => c.name).join(', ');
     final brightness = Theme.of(context).brightness;
 
@@ -271,10 +301,7 @@ class _NextCollectionDetails extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        Text(
-          'Put out: $bins',
-          style: const TextStyle(fontSize: 19),
-        ),
+        Text('Put out: $bins', style: const TextStyle(fontSize: 19)),
       ],
     );
   }
@@ -442,7 +469,9 @@ class _InsetCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.softCardFor(brightness),
-        border: Border(left: BorderSide(color: AppColors.accentFor(brightness), width: 6)),
+        border: Border(
+          left: BorderSide(color: AppColors.accentFor(brightness), width: 6),
+        ),
       ),
       child: child,
     );

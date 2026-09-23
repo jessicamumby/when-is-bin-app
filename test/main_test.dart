@@ -14,7 +14,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   Future<Widget> app() async {
-    SharedPreferences.setMockInitialValues({});
+    // Onboarded so the home screen (not onboarding) is what the theme tests
+    // exercise.
+    SharedPreferences.setMockInitialValues({'onboarded': true});
     final settings = SettingsProvider(await SharedPreferences.getInstance());
     return MultiProvider(
       providers: [
