@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:when_is_bin_app/core/theme.dart';
 import 'package:when_is_bin_app/main.dart';
 import 'package:when_is_bin_app/models/address_lookup.dart';
 import 'package:when_is_bin_app/models/lookup.dart';
@@ -103,6 +104,43 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('15 EXAMPLE COURT'), findsOneWidget);
+    });
+
+    testWidgets('pushes a light address select screen under a dark app theme',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..addressLookup = AddressLookup(
+          postcode: postcode,
+          requiredInput: 'none',
+          candidates: [candidate],
+        );
+      final lookup = LookupProvider(api: api);
+      final notifications = FakeNotificationService();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LookupProvider>.value(value: lookup),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+            Provider<NotificationService>.value(value: notifications),
+            Provider<ReminderSyncService>.value(
+              value: ReminderSyncService(notifications: notifications),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            home: const OnboardingScreen(),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), postcode);
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.text('15 EXAMPLE COURT'));
+      expect(Theme.of(context).brightness, Brightness.light);
     });
   });
 
@@ -218,6 +256,39 @@ void main() {
       // Straight to the home screen, no onboarding prompt.
       expect(find.text('Use this service to:'), findsOneWidget);
       expect(find.text('Turn on reminders'), findsNothing);
+    });
+  });
+
+  group('Onboarding theme', () {
+    testWidgets('renders in light mode even under a dark app theme',
+        (tester) async {
+      final settings = await makeSettings();
+      final lookup = LookupProvider(api: FakeWhenIsBinsApi());
+      final notifications = FakeNotificationService();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.dark,
+          home: MultiProvider(
+            providers: [
+              ChangeNotifierProvider<LookupProvider>.value(value: lookup),
+              ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+              Provider<NotificationService>.value(value: notifications),
+              Provider<ReminderSyncService>.value(
+                value: ReminderSyncService(notifications: notifications),
+              ),
+            ],
+            child: const OnboardingScreen(),
+          ),
+        ),
+      );
+
+      final context = tester.element(find.text('Find your bin day'));
+      expect(Theme.of(context).brightness, Brightness.light);
+      expect(
+        Theme.of(context).scaffoldBackgroundColor,
+        AppColors.paper,
+      );
     });
   });
 }

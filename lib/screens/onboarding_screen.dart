@@ -56,7 +56,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (addressLookup.candidates.isNotEmpty) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => AddressSelectScreen(addressLookup: addressLookup),
+          builder: (_) => AddressSelectScreen(
+            addressLookup: addressLookup,
+            forceLight: true,
+          ),
         ),
       );
     } else {
@@ -99,13 +102,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final settings = context.watch<SettingsProvider>();
     final lookup = context.watch<LookupProvider>();
 
-    return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: lookup.schedule != null
-              ? _buildReminderStep(settings)
-              : _buildPostcodeStep(lookup),
+    // Onboarding always renders in the light design system, regardless of the
+    // device's system theme.
+    return Theme(
+      data: AppTheme.light,
+      child: Scaffold(
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: lookup.schedule != null
+                ? _buildReminderStep(settings)
+                : _buildPostcodeStep(lookup),
+          ),
         ),
       ),
     );
@@ -128,7 +136,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(height: 16),
         const Text(
           'Enter your postcode to find which bins go out, and when. '
-          'We\\u2019ll remind you the night before.',
+          'We\u2019ll remind you the night before.',
           style: TextStyle(fontSize: 20, height: 1.35),
         ),
         const SizedBox(height: 24),
@@ -184,7 +192,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
         const SizedBox(height: 8),
         const Text(
-          'You\\u2019ll get a notification before each collection to remind '
+          'You\u2019ll get a notification before each collection to remind '
           'you to put the bins out.',
           style: TextStyle(fontSize: 16, color: AppColors.muted),
         ),
