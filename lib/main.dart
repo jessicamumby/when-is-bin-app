@@ -12,6 +12,7 @@ import 'providers/lookup_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/schedule_screen.dart';
 import 'services/notification_service.dart';
 import 'services/reminder_sync_service.dart';
 import 'services/schedule_refresh_service.dart';
@@ -112,8 +113,27 @@ Future<void> _recheckSavedSchedule({
   }
 }
 
-class WhenIsBinApp extends StatelessWidget {
+class WhenIsBinApp extends StatefulWidget {
   const WhenIsBinApp({super.key});
+
+  @override
+  State<WhenIsBinApp> createState() => _WhenIsBinAppState();
+}
+
+class _WhenIsBinAppState extends State<WhenIsBinApp> {
+  @override
+  void initState() {
+    super.initState();
+    // A saved address carries a persisted schedule, so hydrate it straight
+    // away — whichever screen the app opens on needs it, not just the
+    // search screen.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final settings = context.read<SettingsProvider>();
+      if (settings.savedAddress == null) return;
+      context.read<LookupProvider>().restoreSchedule(settings.savedSchedule);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,9 +144,15 @@ class WhenIsBinApp extends StatelessWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.system,
-      home: settings.isOnboarded
-          ? const HomeScreen()
-          : const OnboardingScreen(),
+      // An onboarded user who still has their saved address sees their bin
+      // days directly — they've already found their bin day, so the search
+      // form would be noise. Clearing the saved address (from Settings)
+      // falls back to the search screen, which starts the journey again.
+      home: settings.isOnboarded && settings.savedAddress != null
+          ? const ScheduleScreen()
+          : settings.isOnboarded
+              ? const HomeScreen()
+              : const OnboardingScreen(),
     );
   }
 }
