@@ -149,6 +149,48 @@ void main() {
           .firstWhere((t) => t.style?.fontSize == 40);
       expect(headline.style?.color, AppColors.ink);
     });
+
+    testWidgets('shows the reminder step after choosing an address',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..addressLookup = AddressLookup(
+          postcode: postcode,
+          requiredInput: 'none',
+          candidates: [candidate],
+        )
+        ..lookupResponses = [
+          Lookup(id: 'L1', status: 'done', result: schedule),
+        ];
+      final lookup = LookupProvider(api: api);
+      final notifications = FakeNotificationService();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LookupProvider>.value(value: lookup),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+            Provider<NotificationService>.value(value: notifications),
+            Provider<ReminderSyncService>.value(
+              value: ReminderSyncService(notifications: notifications),
+            ),
+          ],
+          child: const MaterialApp(home: OnboardingScreen()),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), postcode);
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      // On the address select screen, pick the address.
+      await tester.tap(find.text('15 EXAMPLE COURT'));
+      await tester.pumpAndSettle();
+
+      // Back on onboarding, the reminder step is shown.
+      expect(find.text('When should we remind you?'), findsOneWidget);
+      expect(find.text('Turn on reminders'), findsOneWidget);
+    });
   });
 
   group('Onboarding reminder step', () {

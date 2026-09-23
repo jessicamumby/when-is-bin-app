@@ -89,12 +89,18 @@ class AddressSelectScreen extends StatelessWidget {
                       );
                       await settings.saveSchedule(schedule);
                       if (!context.mounted) return;
-                      Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              ScheduleScreen(forceLight: forceLight),
-                        ),
-                      );
+                      if (forceLight) {
+                        // Onboarding: return to the onboarding screen, which
+                        // now shows the reminder step (schedule is set).
+                        Navigator.of(context).pop();
+                      } else {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ScheduleScreen(forceLight: forceLight),
+                          ),
+                        );
+                      }
                     } else if (lookup.error != null) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
