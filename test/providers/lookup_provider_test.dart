@@ -116,6 +116,36 @@ void main() {
       expect(provider.error?.detail,
           "The council's system doesn't list that exact address.");
     });
+
+    test('selectAddress sends a valid idempotency key (visible ASCII, no spaces)',
+            () async {
+          final api = FakeWhenIsBinsApi()
+            ..addressLookup = AddressLookup(
+              postcode: 'CB4 2HX',
+              requiredInput: 'property_id',
+              candidates: const [
+                AddressCandidate(id: 'p:abc', label: '1 Test Road'),
+              ],
+            )
+            ..lookupResponses = [Lookup(id: 'lookup-1', status: 'done')];
+          final provider = LookupProvider(api: api);
+
+          // Real flow: postcode is resolved first, so _postcode holds a value
+          // containing a space (e.g. 'CB4 2HX') when the lookup is submitted.
+          await provider.lookupPostcode('CB4 2HX');
+          await provider.selectAddress(
+            const AddressCandidate(id: 'p:abc', label: '1 Test Road'),
+            postcode: 'CB4 2HX',
+          );
+
+          final key = api.lastIdempotencyKey!;
+          // The WhenIsBins API requires 1-128 visible ASCII characters.
+          expect(key.length, inInclusiveRange(1, 128));
+          expect(key, isNot(contains(RegExp(r'\s'))),
+              reason: 'Idempotency-Key must not contain whitespace');
+          expect(RegExp(r'^[\x21-\x7E]+$').hasMatch(key), isTrue,
+              reason: 'Idempotency-Key must be visible ASCIISCII only');
+        });
   });
 
   group('LookupProvider.restoreSchedule', () {

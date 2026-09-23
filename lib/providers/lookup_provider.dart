@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -94,7 +95,11 @@ class LookupProvider extends ChangeNotifier {
     return lookup;
   }
 
+  /// A fresh, space-free idempotency key. The WhenIsBins API requires the
+  /// `Idempotency-Key` to be 1-128 *visible* ASCII characters, so it must not
+  /// contain whitespace (a postcode like 'CB4 2HX' would otherwise break it).
   String _newIdempotencyKey() {
-    return '${DateTime.now().microsecondsSinceEpoch}-${_postcode ?? 'x'}';
+    final rng = Random.secure();
+    return List.generate(32, (_) => rng.nextInt(16).toRadixString(16)).join();
   }
 }
