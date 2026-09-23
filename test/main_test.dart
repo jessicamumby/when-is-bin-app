@@ -117,41 +117,86 @@ void main() {
     );
   });
 
-  group('follows the system theme', () {
-    testWidgets('into dark mode', (tester) async {
-      tester.platformDispatcher.platformBrightnessTestValue =
-          Brightness.dark;
-      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+  group('stays light whatever the device theme', () {
+    // The app mirrors the whenisbins.com design system, which is light. A phone
+    // in dark mode must not flip the app into the dark theme — the onboarding
+    // flow already forces light, and every other route has to match it.
+    testWidgets(
+      'the search screen stays light on a dark-mode phone',
+      (tester) async {
+        tester.platformDispatcher.platformBrightnessTestValue =
+            Brightness.dark;
+        addTearDown(
+          tester.platformDispatcher.clearPlatformBrightnessTestValue,
+        );
 
-      await tester.pumpWidget(await app(prefs: {'onboarded': true}));
-      await tester.pump();
+        await tester.pumpWidget(await app(prefs: {'onboarded': true}));
+        await tester.pump();
 
-      expect(
-        themeOf(tester, HomeScreen).brightness,
-        Brightness.dark,
-      );
-      expect(
-        themeOf(tester, HomeScreen).scaffoldBackgroundColor,
-        AppColors.canvasDark,
-      );
-    });
+        expect(
+          themeOf(tester, HomeScreen).brightness,
+          Brightness.light,
+        );
+        expect(
+          themeOf(tester, HomeScreen).scaffoldBackgroundColor,
+          AppColors.paper,
+        );
+      },
+    );
 
-    testWidgets('into light mode', (tester) async {
-      tester.platformDispatcher.platformBrightnessTestValue =
-          Brightness.light;
-      addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    testWidgets(
+      'the bin-days screen stays light on a dark-mode phone',
+      (tester) async {
+        tester.platformDispatcher.platformBrightnessTestValue =
+            Brightness.dark;
+        addTearDown(
+          tester.platformDispatcher.clearPlatformBrightnessTestValue,
+        );
 
-      await tester.pumpWidget(await app(prefs: {'onboarded': true}));
-      await tester.pump();
+        await tester.pumpWidget(
+          await app(
+            prefs: {
+              'onboarded': true,
+              'saved_address': '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+              'saved_postcode': 'CB4 2HX',
+              'saved_property_id': 'p:4c5ee6c2f2c7c959',
+              'saved_schedule': savedScheduleJson(),
+            },
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
 
-      expect(
-        themeOf(tester, HomeScreen).brightness,
-        Brightness.light,
-      );
-      expect(
-        themeOf(tester, HomeScreen).scaffoldBackgroundColor,
-        AppColors.paper,
-      );
-    });
+        expect(find.byType(ScheduleScreen), findsOneWidget);
+        final theme = themeOf(tester, ScheduleScreen);
+        expect(theme.brightness, Brightness.light);
+        expect(theme.scaffoldBackgroundColor, AppColors.paper);
+        // Light ink on light paper — not the dark theme's inkLight.
+        expect(theme.textTheme.headlineLarge?.color, AppColors.ink);
+      },
+    );
+
+    testWidgets(
+      'and stays light on a light-mode phone',
+      (tester) async {
+        tester.platformDispatcher.platformBrightnessTestValue =
+            Brightness.light;
+        addTearDown(
+          tester.platformDispatcher.clearPlatformBrightnessTestValue,
+        );
+
+        await tester.pumpWidget(await app(prefs: {'onboarded': true}));
+        await tester.pump();
+
+        expect(
+          themeOf(tester, HomeScreen).brightness,
+          Brightness.light,
+        );
+        expect(
+          themeOf(tester, HomeScreen).scaffoldBackgroundColor,
+          AppColors.paper,
+        );
+      },
+    );
   });
 }
