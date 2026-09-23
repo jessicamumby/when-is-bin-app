@@ -30,6 +30,22 @@ Schedule buildSchedule() {
   );
 }
 
+/// A schedule whose dates the council has not confirmed yet.
+Schedule provisionalSchedule() {
+  return const Schedule(
+    propertyId: 'p:4c5ee6c2f2c7c959',
+    addressMatch: 'fuzzy',
+    provisional: true,
+    collections: [
+      Collection(
+        name: 'Black bin',
+        wasteType: 'refuse',
+        dates: ['2026-09-10', '2026-09-24'],
+      ),
+    ],
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -92,6 +108,51 @@ void main() {
       expect(provider.savedAddress, isNull);
       expect(provider.savedPostcode, isNull);
       expect(provider.savedPropertyId, isNull);
+    });
+  });
+
+  group('SettingsProvider reminders', () {
+    test('reminders are off by default', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      expect(provider.remindersEnabled, isFalse);
+    });
+
+    test('persists the reminder-enabled flag across a cold start', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+
+      await provider.setRemindersEnabled(true);
+
+      expect(provider.remindersEnabled, isTrue);
+      // A fresh provider (cold start) reads the same value back.
+      expect(SettingsProvider(prefs).remindersEnabled, isTrue);
+
+      await provider.setRemindersEnabled(false);
+
+      expect(provider.remindersEnabled, isFalse);
+      expect(SettingsProvider(prefs).remindersEnabled, isFalse);
+    });
+
+    test('reads a persisted enabled flag at construction', () async {
+      SharedPreferences.setMockInitialValues({'reminders_enabled': true});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      expect(provider.remindersEnabled, isTrue);
+    });
+
+    test('notifies listeners when the reminder flag changes', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider =
+          SettingsProvider(await SharedPreferences.getInstance());
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      await provider.setRemindersEnabled(true);
+
+      expect(notifications, 1);
     });
   });
 
@@ -178,6 +239,29 @@ void main() {
       expect(provider.hasSavedSchedule, isFalse);
       expect(provider.savedSchedule, isNull);
       expect(provider.savedCollections, isEmpty);
+    });
+
+    test('persists the provisional flag so a cold start never reminds from '
+        'unconfirmed dates', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+
+      await provider.saveSchedule(provisionalSchedule());
+
+      expect(provider.savedSchedule, isNotNull);
+      expect(provider.savedSchedule!.provisional, isTrue);
+      // The flag survives the round-trip through storage.
+      expect(SettingsProvider(prefs).savedSchedule!.provisional, isTrue);
+    });
+
+    test('a confirmed schedule is not marked provisional', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+
+      await SettingsProvider(prefs).saveSchedule(buildSchedule());
+
+      expect(SettingsProvider(prefs).savedSchedule!.provisional, isFalse);
     });
 
     test('clearing the saved address clears the saved schedule', () async {

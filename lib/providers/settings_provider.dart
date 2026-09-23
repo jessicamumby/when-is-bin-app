@@ -14,6 +14,7 @@ import '../services/reminder_scheduler.dart';
 class SettingsProvider extends ChangeNotifier {
   SettingsProvider(this._prefs) {
     _reminderTime = _readReminderTime();
+    _remindersEnabled = _prefs.getBool(_kRemindersEnabled) ?? false;
     _savedAddress = _prefs.getString(_kAddress);
     _savedPostcode = _prefs.getString(_kPostcode);
     _savedPropertyId = _prefs.getString(_kPropertyId);
@@ -21,6 +22,7 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   static const _kReminderTime = 'reminder_time';
+  static const _kRemindersEnabled = 'reminders_enabled';
   static const _kAddress = 'saved_address';
   static const _kPostcode = 'saved_postcode';
   static const _kPropertyId = 'saved_property_id';
@@ -29,11 +31,13 @@ class SettingsProvider extends ChangeNotifier {
   final SharedPreferences _prefs;
 
   late ReminderTime _reminderTime;
+  bool _remindersEnabled = false;
   String? _savedAddress;
   String? _savedPostcode;
   String? _savedPropertyId;
 
   bool _hasSavedSchedule = false;
+  bool _savedProvisional = false;
   String? _savedAddressMatch;
   List<Collection> _savedCollections = const [];
   List<ByDateEntry> _savedByDate = const [];
@@ -41,6 +45,12 @@ class SettingsProvider extends ChangeNotifier {
   String? _savedRetrievedAt;
 
   ReminderTime get reminderTime => _reminderTime;
+
+  /// Whether the user has reminders switched on. Persisted so the switch still
+  /// reads "on" after a cold start, matching the notifications that are
+  /// actually scheduled.
+  bool get remindersEnabled => _remindersEnabled;
+
   String? get savedAddress => _savedAddress;
   String? get savedPostcode => _savedPostcode;
   String? get savedPropertyId => _savedPropertyId;
@@ -63,6 +73,7 @@ class SettingsProvider extends ChangeNotifier {
       byDate: _savedByDate,
       calendarUrl: _savedCalendarUrl,
       retrievedAt: _savedRetrievedAt,
+      provisional: _savedProvisional,
     );
   }
 
@@ -77,6 +88,7 @@ class SettingsProvider extends ChangeNotifier {
     try {
       final json = jsonDecode(stored) as Map<String, dynamic>;
       _savedAddressMatch = json['address_match'] as String?;
+      _savedProvisional = json['provisional'] as bool? ?? false;
       _savedCollections = (json['collections'] as List<dynamic>? ?? const [])
           .map((e) => Collection.fromJson(e as Map<String, dynamic>))
           .toList();
@@ -101,6 +113,12 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setRemindersEnabled(bool enabled) async {
+    _remindersEnabled = enabled;
+    await _prefs.setBool(_kRemindersEnabled, enabled);
+    notifyListeners();
+  }
+
   Future<void> saveAddress({
     required String address,
     required String postcode,
@@ -119,6 +137,7 @@ class SettingsProvider extends ChangeNotifier {
   /// ScheduleScreen can render it offline on a later cold start.
   Future<void> saveSchedule(Schedule schedule) async {
     _hasSavedSchedule = true;
+    _savedProvisional = schedule.provisional;
     // The schedule's own property id is authoritative.
     _savedPropertyId = schedule.propertyId;
     _savedAddressMatch = schedule.addressMatch;
@@ -137,6 +156,7 @@ class SettingsProvider extends ChangeNotifier {
         'by_date': schedule.byDate.map((e) => e.toJson()).toList(),
         'calendar_url': schedule.calendarUrl,
         'retrieved_at': schedule.retrievedAt,
+        'provisional': schedule.provisional,
       }),
     );
     notifyListeners();
@@ -147,6 +167,7 @@ class SettingsProvider extends ChangeNotifier {
     _savedPostcode = null;
     _savedPropertyId = null;
     _hasSavedSchedule = false;
+    _savedProvisional = false;
     _savedAddressMatch = null;
     _savedCollections = const [];
     _savedByDate = const [];
