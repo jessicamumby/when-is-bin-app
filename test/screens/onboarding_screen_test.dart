@@ -69,6 +69,28 @@ void main() {
       expect(find.text('Find my bin day'), findsOneWidget);
     });
 
+    testWidgets('promises a reminder the morning or evening before',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi();
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildApp(lookup, settings, FakeNotificationService()),
+      );
+
+      expect(
+        find.text(
+          'Enter your postcode to find which bins go out, and when. '
+          'Get a reminder the morning or evening before.',
+        ),
+        findsOneWidget,
+      );
+      // Reminders are offered at 9:00am or 7:00pm on the day before, so the
+      // old "night before" promise was narrower than what the app does.
+      expect(find.textContaining('the night before'), findsNothing);
+    });
+
     testWidgets('validates an empty postcode', (tester) async {
       final settings = await makeSettings();
       final api = FakeWhenIsBinsApi();

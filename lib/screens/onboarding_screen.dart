@@ -136,7 +136,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(height: 16),
         const Text(
           'Enter your postcode to find which bins go out, and when. '
-          'We\u2019ll remind you the night before.',
+          'Get a reminder the morning or evening before.',
           style: TextStyle(fontSize: 20, height: 1.35),
         ),
         const SizedBox(height: 24),

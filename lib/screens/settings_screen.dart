@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../providers/settings_provider.dart';
 import '../services/reminder_scheduler.dart';
+import 'about_screen.dart';
 
 /// Settings: reminder time choice and saved-address management.
 class SettingsScreen extends StatelessWidget {
@@ -73,6 +74,18 @@ class SettingsScreen extends StatelessWidget {
                 color: AppColors.mutedFor(Theme.of(context).brightness),
               ),
             ),
+          const Divider(height: 40),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'About',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AboutScreen()),
+            ),
+          ),
         ],
       ),
     );
