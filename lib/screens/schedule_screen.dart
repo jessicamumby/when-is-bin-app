@@ -31,10 +31,30 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Widget build(BuildContext context) {
     final lookup = context.watch<LookupProvider>();
     final settings = context.watch<SettingsProvider>();
+
+    // The Theme must wrap the screen so every Theme.of(context) inside the
+    // body resolves the light theme, not the app's dark theme. A Builder
+    // re-reads the wrapped context so the body sees the light theme.
+    return widget.forceLight
+        ? Theme(
+            data: AppTheme.light,
+            child: Builder(
+              builder: (lightContext) =>
+                  _buildScreen(lightContext, lookup, settings),
+            ),
+          )
+        : _buildScreen(context, lookup, settings);
+  }
+
+  Widget _buildScreen(
+    BuildContext context,
+    LookupProvider lookup,
+    SettingsProvider settings,
+  ) {
     final schedule = lookup.schedule;
     final muted = AppColors.mutedFor(Theme.of(context).brightness);
 
-    final screen = schedule == null
+    return schedule == null
         ? Scaffold(
             appBar: AppBar(title: const Text('Your bin days')),
             body: _placeholder(lookup),
@@ -99,10 +119,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ),
             ),
           );
-
-    return widget.forceLight
-        ? Theme(data: AppTheme.light, child: screen)
-        : screen;
   }
 
   /// The screen with nothing to show yet: still loading, failed, or simply

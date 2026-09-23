@@ -27,7 +27,26 @@ class AddressSelectScreen extends StatelessWidget {
     final lookup = context.watch<LookupProvider>();
     final settings = context.read<SettingsProvider>();
 
-    final screen = Scaffold(
+    // The Theme must wrap the screen so every Theme.of(context) inside the
+    // body resolves the light theme, not the app's dark theme. A Builder
+    // re-reads the wrapped context so the body sees the light theme.
+    return forceLight
+        ? Theme(
+            data: AppTheme.light,
+            child: Builder(
+              builder: (lightContext) =>
+                  _buildScreen(lightContext, lookup, settings),
+            ),
+          )
+        : _buildScreen(context, lookup, settings);
+  }
+
+  Widget _buildScreen(
+    BuildContext context,
+    LookupProvider lookup,
+    SettingsProvider settings,
+  ) {
+    return Scaffold(
       appBar: AppBar(title: const Text('Select your address')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -92,8 +111,6 @@ class AddressSelectScreen extends StatelessWidget {
         ),
       ),
     );
-
-    return forceLight ? Theme(data: AppTheme.light, child: screen) : screen;
   }
 }
 

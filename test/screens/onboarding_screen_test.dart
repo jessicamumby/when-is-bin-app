@@ -141,6 +141,13 @@ void main() {
 
       final context = tester.element(find.text('15 EXAMPLE COURT'));
       expect(Theme.of(context).brightness, Brightness.light);
+
+      // The body headline must use the light ink (readable on white), not the
+      // dark theme's light-grey inkLight.
+      final headline = tester
+          .widgetList<Text>(find.text('Select your address'))
+          .firstWhere((t) => t.style?.fontSize == 40);
+      expect(headline.style?.color, AppColors.ink);
     });
   });
 
