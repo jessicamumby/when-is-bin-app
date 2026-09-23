@@ -259,10 +259,16 @@ class _SavedAddressCard extends StatelessWidget {
         children: [
           const Text(
             'Your saved address',
-            style: TextStyle(fontWeight: FontWeight.w700),
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: AppColors.ink,
+            ),
           ),
           const SizedBox(height: 4),
-          Text(address, style: const TextStyle(fontSize: 16)),
+          Text(
+            address,
+            style: const TextStyle(fontSize: 16, color: AppColors.ink),
+          ),
           const SizedBox(height: 8),
           TextButton(
             onPressed: onView,
