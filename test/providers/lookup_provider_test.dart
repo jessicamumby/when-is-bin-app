@@ -7,6 +7,11 @@ import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import '../fakes/fake_api.dart';
 
+const _candidate = AddressCandidate(
+  id: 'p:4c5ee6c2f2c7c959',
+  label: '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+);
+
 void main() {
   group('LookupProvider', () {
     test('starts empty', () {
@@ -56,7 +61,7 @@ void main() {
       expect(provider.addressLookup, isNull);
     });
 
-    test('selectAddress creates a lookup and polls until done', () async {
+    test('selectAddress creates a lookup and waits until done', () async {
       final api = FakeWhenIsBinsApi()
         ..lookupResponses = [
           Lookup(
@@ -64,6 +69,8 @@ void main() {
             status: 'queued',
             expectedWaitSeconds: 1,
           ),
+        ]
+        ..waitResponses = [
           Lookup(
             id: 'lookup-1',
             status: 'done',
@@ -82,13 +89,7 @@ void main() {
         ];
       final provider = LookupProvider(api: api);
 
-      await provider.selectAddress(
-        const AddressCandidate(
-          id: 'p:4c5ee6c2f2c7c959',
-          label: '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
-        ),
-        postcode: 'CB4 2HX',
-      );
+      await provider.selectAddress(_candidate, postcode: 'CB4 2HX');
 
       expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
       expect(provider.schedule?.collections, hasLength(1));
@@ -115,6 +116,7 @@ void main() {
       expect(provider.schedule, isNull);
       expect(provider.error?.detail,
           "The council's system doesn't list that exact address.");
+      expect(provider.pendingLookupId, isNull);
     });
 
     test('selectAddress sends a valid idempotency key (visible ASCII, no spaces)',
@@ -146,6 +148,218 @@ void main() {
           expect(RegExp(r'^[\x21-\x7E]+$').hasMatch(key), isTrue,
               reason: 'Idempotency-Key must be visible ASCIISCII only');
         });
+  });
+
+  group('LookupProvider long-polling', () {
+    late DateTime now;
+    late List<Duration> slept;
+
+    setUp(() {
+      now = DateTime(2026, 9, 23, 12);
+      slept = [];
+    });
+
+    /// A clock that advances by exactly what the provider asks to sleep, so
+    /// the two-minute budget is exercised without waiting two minutes.
+    Future<void> delay(Duration duration) async {
+      slept.add(duration);
+      now = now.add(duration);
+    }
+
+    LookupProvider buildProvider(
+      FakeWhenIsBinsApi api, {
+      Duration maxWait = const Duration(minutes: 2),
+    }) {
+      return LookupProvider(
+        api: api,
+        delay: delay,
+        now: () => now,
+        maxWait: maxWait,
+      );
+    }
+
+    Schedule pollSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'exact',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+      );
+    }
+
+    Future<void> select(LookupProvider provider) {
+      return provider.selectAddress(_candidate, postcode: 'CB4 2HX');
+    }
+
+    test('waits on the endpoint instead of snapshotting every second',
+        () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'done', result: pollSchedule()),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(api.waitCallCount, 1);
+      expect(api.lookupCallCount, 0,
+          reason: 'the one-second snapshot poll must be gone');
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+      expect(provider.pendingLookupId, isNull);
+      expect(provider.isLoading, isFalse);
+      expect(slept, isEmpty, reason: 'a settled answer needs no backoff');
+    });
+
+    test('reconnects with the cursor from the previous answer', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'running'),
+          Lookup(id: 'lookup-1', status: 'done', result: pollSchedule()),
+        ]
+        ..cursors = ['cur-1', 'cur-2'];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(api.afterCalls, [null, 'cur-1']);
+      expect(api.waitCallCount, 2);
+    });
+
+    test('waits out the Retry-After the server asks for', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'running'),
+          Lookup(id: 'lookup-1', status: 'done', result: pollSchedule()),
+        ]
+        ..retryAfters = [const Duration(seconds: 30)];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(slept, [const Duration(seconds: 30)]);
+    });
+
+    test('falls back to its own backoff when no wait is asked for', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'running'),
+          Lookup(id: 'lookup-1', status: 'done', result: pollSchedule()),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(slept, [LookupProvider.defaultReconnectDelay]);
+    });
+
+    test('stops at the two-minute cap and keeps the partial result', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        // The last answer repeats: this lookup never settles.
+        ..waitResponses = [
+          Lookup(
+            id: 'lookup-1',
+            status: 'running',
+            result: pollSchedule(),
+          ),
+        ]
+        ..retryAfters = [const Duration(seconds: 30)];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      final total = slept.fold(Duration.zero, (a, b) => a + b);
+      expect(total, lessThanOrEqualTo(const Duration(minutes: 2)));
+      expect(slept, isNotEmpty);
+      expect(api.createLookupCalls, 1,
+          reason: 'a slow lookup is never resubmitted');
+      expect(provider.pendingLookupId, 'lookup-1',
+          reason: 'the id is kept for a later check');
+      expect(provider.schedule?.collections.single.name, 'Black bin',
+          reason: 'the partial result stays on screen');
+      expect(provider.error, isNull);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('resumes a retained lookup without submitting a new one', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitResponses = [
+          Lookup(
+            id: 'lookup-1',
+            status: 'partial',
+            result: pollSchedule(),
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+      expect(provider.pendingLookupId, 'lookup-1');
+
+      // The next check finds the lookup finished.
+      api.waitResponses = [
+        Lookup(
+          id: 'lookup-1',
+          status: 'done',
+          result: const Schedule(
+            propertyId: 'p:4c5ee6c2f2c7c959',
+            addressMatch: 'exact',
+            collections: [
+              Collection(
+                name: 'Black bin',
+                wasteType: 'refuse',
+                dates: ['2026-09-10', '2026-09-24'],
+              ),
+            ],
+          ),
+        ),
+      ];
+      await provider.continuePendingLookup();
+
+      expect(provider.pendingLookupId, isNull);
+      expect(provider.schedule?.collections.single.dates,
+          ['2026-09-10', '2026-09-24']);
+      expect(api.createLookupCalls, 1,
+          reason: 'resuming reconnects to the same lookup id');
+      expect(provider.isLoading, isFalse);
+      expect(provider.error, isNull);
+    });
+
+    test('does nothing when there is no lookup to resume', () async {
+      final api = FakeWhenIsBinsApi();
+      final provider = buildProvider(api);
+
+      await provider.continuePendingLookup();
+
+      expect(api.waitCallCount, 0);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('surfaces an ApiException raised by the wait endpoint', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
+        ..error = const ApiException(
+          statusCode: 429,
+          problem: 'rate_limited',
+          detail: 'Slow down.',
+        );
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(provider.error?.problem, 'rate_limited');
+      expect(provider.pendingLookupId, isNull);
+      expect(provider.isLoading, isFalse);
+    });
   });
 
   group('LookupProvider.restoreSchedule', () {

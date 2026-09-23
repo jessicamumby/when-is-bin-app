@@ -10,7 +10,8 @@ import '../services/reminder_scheduler.dart';
 /// schedule that belongs to it.
 ///
 /// The schedule is stored so the saved-address shortcut still shows real bin
-/// days on a cold start, without another lookup round-trip.
+/// days on a cold start, without another lookup round-trip. Its ETag is stored
+/// with it so that shortcut can be re-checked conditionally later.
 class SettingsProvider extends ChangeNotifier {
   SettingsProvider(this._prefs) {
     _reminderTime = _readReminderTime();
@@ -18,6 +19,7 @@ class SettingsProvider extends ChangeNotifier {
     _savedAddress = _prefs.getString(_kAddress);
     _savedPostcode = _prefs.getString(_kPostcode);
     _savedPropertyId = _prefs.getString(_kPropertyId);
+    _savedScheduleEtag = _prefs.getString(_kScheduleEtag);
     _readSavedSchedule();
   }
 
@@ -27,6 +29,7 @@ class SettingsProvider extends ChangeNotifier {
   static const _kPostcode = 'saved_postcode';
   static const _kPropertyId = 'saved_property_id';
   static const _kSchedule = 'saved_schedule';
+  static const _kScheduleEtag = 'saved_schedule_etag';
 
   final SharedPreferences _prefs;
 
@@ -35,6 +38,7 @@ class SettingsProvider extends ChangeNotifier {
   String? _savedAddress;
   String? _savedPostcode;
   String? _savedPropertyId;
+  String? _savedScheduleEtag;
 
   bool _hasSavedSchedule = false;
   bool _savedProvisional = false;
@@ -54,6 +58,10 @@ class SettingsProvider extends ChangeNotifier {
   String? get savedAddress => _savedAddress;
   String? get savedPostcode => _savedPostcode;
   String? get savedPropertyId => _savedPropertyId;
+
+  /// The ETag that came with the saved schedule, to be sent as `If-None-Match`
+  /// when the schedule is re-checked. Null until the API has told us one.
+  String? get savedScheduleEtag => _savedScheduleEtag;
 
   /// Whether a schedule was persisted alongside the saved address.
   bool get hasSavedSchedule => _hasSavedSchedule;
@@ -124,18 +132,27 @@ class SettingsProvider extends ChangeNotifier {
     required String postcode,
     required String propertyId,
   }) async {
+    // An ETag only describes the property it came from, so a different address
+    // must not inherit the old one: it would make the next conditional request
+    // report "unchanged" for a schedule we have never seen.
+    final changedProperty = propertyId != _savedPropertyId;
     _savedAddress = address;
     _savedPostcode = postcode;
     _savedPropertyId = propertyId;
     await _prefs.setString(_kAddress, address);
     await _prefs.setString(_kPostcode, postcode);
     await _prefs.setString(_kPropertyId, propertyId);
+    if (changedProperty) await _setScheduleEtag(null);
     notifyListeners();
   }
 
   /// Persist the looked-up schedule (and the property id it belongs to) so
   /// ScheduleScreen can render it offline on a later cold start.
-  Future<void> saveSchedule(Schedule schedule) async {
+  ///
+  /// Pass the [etag] the server sent with the schedule to make the next check
+  /// conditional; leaving it out keeps whatever tag is already stored.
+  Future<void> saveSchedule(Schedule schedule, {String? etag}) async {
+    final changedProperty = schedule.propertyId != _savedPropertyId;
     _hasSavedSchedule = true;
     _savedProvisional = schedule.provisional;
     // The schedule's own property id is authoritative.
@@ -159,7 +176,21 @@ class SettingsProvider extends ChangeNotifier {
         'provisional': schedule.provisional,
       }),
     );
+    if (etag != null) {
+      await _setScheduleEtag(etag);
+    } else if (changedProperty) {
+      await _setScheduleEtag(null);
+    }
     notifyListeners();
+  }
+
+  Future<void> _setScheduleEtag(String? etag) async {
+    _savedScheduleEtag = etag;
+    if (etag == null) {
+      await _prefs.remove(_kScheduleEtag);
+    } else {
+      await _prefs.setString(_kScheduleEtag, etag);
+    }
   }
 
   Future<void> clearSavedAddress() async {
@@ -173,9 +204,11 @@ class SettingsProvider extends ChangeNotifier {
     _savedByDate = const [];
     _savedCalendarUrl = null;
     _savedRetrievedAt = null;
+    _savedScheduleEtag = null;
     await _prefs.remove(_kAddress);
     await _prefs.remove(_kPostcode);
     await _prefs.remove(_kPropertyId);
+    await _prefs.remove(_kScheduleEtag);
     // A schedule without its address would show bin days for an address the
     // user has just removed.
     await _prefs.remove(_kSchedule);
