@@ -116,5 +116,104 @@ void main() {
       expect(provider.error?.detail,
           "The council's system doesn't list that exact address.");
     });
+
+    test('selectAddress sends a valid idempotency key (visible ASCII, no spaces)',
+            () async {
+          final api = FakeWhenIsBinsApi()
+            ..addressLookup = AddressLookup(
+              postcode: 'CB4 2HX',
+              requiredInput: 'property_id',
+              candidates: const [
+                AddressCandidate(id: 'p:abc', label: '1 Test Road'),
+              ],
+            )
+            ..lookupResponses = [Lookup(id: 'lookup-1', status: 'done')];
+          final provider = LookupProvider(api: api);
+
+          // Real flow: postcode is resolved first, so _postcode holds a value
+          // containing a space (e.g. 'CB4 2HX') when the lookup is submitted.
+          await provider.lookupPostcode('CB4 2HX');
+          await provider.selectAddress(
+            const AddressCandidate(id: 'p:abc', label: '1 Test Road'),
+            postcode: 'CB4 2HX',
+          );
+
+          final key = api.lastIdempotencyKey!;
+          // The WhenIsBins API requires 1-128 visible ASCII characters.
+          expect(key.length, inInclusiveRange(1, 128));
+          expect(key, isNot(contains(RegExp(r'\s'))),
+              reason: 'Idempotency-Key must not contain whitespace');
+          expect(RegExp(r'^[\x21-\x7E]+$').hasMatch(key), isTrue,
+              reason: 'Idempotency-Key must be visible ASCIISCII only');
+        });
+  });
+
+  group('LookupProvider.restoreSchedule', () {
+    Schedule savedSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'exact',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+        byDate: [
+          ByDateEntry(
+            date: '2026-09-10',
+            weekday: 'Thursday',
+            collections: [
+              ByDateCollection(name: 'Black bin', wasteType: 'refuse'),
+            ],
+          ),
+        ],
+        calendarUrl: 'https://whenisbins.com/100023336956.ics',
+      );
+    }
+
+    test('hydrates the schedule from persisted data and notifies', () {
+      final provider = LookupProvider(api: FakeWhenIsBinsApi());
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      provider.restoreSchedule(savedSchedule());
+
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+      expect(provider.schedule?.collections.single.name, 'Black bin');
+      expect(provider.schedule?.byDate.single.date, '2026-09-10');
+      expect(provider.schedule?.calendarUrl,
+          'https://whenisbins.com/100023336956.ics');
+      expect(notifications, 1);
+    });
+
+    test('does nothing when there is no persisted schedule', () {
+      final provider = LookupProvider(api: FakeWhenIsBinsApi());
+      var notifications = 0;
+      provider.addListener(() => notifications++);
+
+      provider.restoreSchedule(null);
+
+      expect(provider.schedule, isNull);
+      expect(notifications, 0);
+    });
+
+    test('clears a previous error', () async {
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 404,
+          problem: 'postcode_outside_coverage',
+          detail: 'Postcode is outside coverage.',
+        );
+      final provider = LookupProvider(api: api);
+      await provider.lookupPostcode('ZZ99 9ZZ');
+      expect(provider.error, isNotNull);
+
+      provider.restoreSchedule(savedSchedule());
+
+      expect(provider.error, isNull);
+      expect(provider.schedule, isNotNull);
+    });
   });
 }

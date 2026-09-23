@@ -7,6 +7,7 @@ import '../providers/settings_provider.dart';
 import '../services/when_is_bins_api.dart';
 import 'address_select_screen.dart';
 import 'schedule_screen.dart';
+import 'settings_screen.dart';
 
 /// The start screen: enter a postcode to find your bin day.
 class HomeScreen extends StatefulWidget {
@@ -21,9 +22,31 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _validationError;
 
   @override
+  void initState() {
+    super.initState();
+    // Cold start: a saved address carries a persisted schedule, so hydrate it
+    // straight away rather than waiting for the user to tap through.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final settings = context.read<SettingsProvider>();
+      if (settings.savedAddress == null) return;
+      context.read<LookupProvider>().restoreSchedule(settings.savedSchedule);
+    });
+  }
+
+  @override
   void dispose() {
     _postcodeController.dispose();
     super.dispose();
+  }
+
+  /// Show the saved bin days, restoring them from storage first if this
+  /// session has not looked anything up yet.
+  void _openSavedSchedule(SettingsProvider settings) {
+    context.read<LookupProvider>().restoreSchedule(settings.savedSchedule);
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+    );
   }
 
   Future<void> _submit() async {
@@ -87,7 +110,7 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip: 'Settings',
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
               );
             },
           ),
@@ -119,13 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (settings.savedAddress != null) ...[
               _SavedAddressCard(
                 address: settings.savedAddress!,
-                onView: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const ScheduleScreen(),
-                    ),
-                  );
-                },
+                onView: () => _openSavedSchedule(settings),
               ),
               const SizedBox(height: 24),
             ],

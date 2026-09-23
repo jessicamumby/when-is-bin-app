@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../models/address_lookup.dart';
 import '../providers/lookup_provider.dart';
+import '../providers/settings_provider.dart';
 import 'schedule_screen.dart';
 
 /// Lets the user pick their address from the council's candidate list.
@@ -15,6 +16,7 @@ class AddressSelectScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lookup = context.watch<LookupProvider>();
+    final settings = context.read<SettingsProvider>();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Select your address')),
@@ -45,7 +47,17 @@ class AddressSelectScreen extends StatelessWidget {
                       postcode: addressLookup.postcode,
                     );
                     if (!context.mounted) return;
-                    if (lookup.schedule != null) {
+                    final schedule = lookup.schedule;
+                    if (schedule != null) {
+                      // Persist the address and its schedule, so the home
+                      // screen shortcut works without another lookup.
+                      await settings.saveAddress(
+                        address: candidate.label,
+                        postcode: addressLookup.postcode,
+                        propertyId: candidate.id,
+                      );
+                      await settings.saveSchedule(schedule);
+                      if (!context.mounted) return;
                       Navigator.of(context).pushReplacement(
                         MaterialPageRoute(
                           builder: (_) => const ScheduleScreen(),

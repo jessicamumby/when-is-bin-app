@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -75,6 +76,16 @@ class LookupProvider extends ChangeNotifier {
     }
   }
 
+  /// Hydrate the schedule from data persisted by `SettingsProvider`, so the
+  /// saved-address shortcut renders real bin days on a cold start without
+  /// another lookup. A null [schedule] (nothing saved) is a no-op.
+  void restoreSchedule(Schedule? schedule) {
+    if (schedule == null) return;
+    _error = null;
+    _schedule = schedule;
+    notifyListeners();
+  }
+
   Future<Lookup> _pollUntilSettled(Lookup initial) async {
     var lookup = initial;
     while (lookup.isPending) {
@@ -84,7 +95,11 @@ class LookupProvider extends ChangeNotifier {
     return lookup;
   }
 
+  /// A fresh, space-free idempotency key. The WhenIsBins API requires the
+  /// `Idempotency-Key` to be 1-128 *visible* ASCII characters, so it must not
+  /// contain whitespace (a postcode like 'CB4 2HX' would otherwise break it).
   String _newIdempotencyKey() {
-    return '${DateTime.now().microsecondsSinceEpoch}-${_postcode ?? 'x'}';
+    final rng = Random.secure();
+    return List.generate(32, (_) => rng.nextInt(16).toRadixString(16)).join();
   }
 }

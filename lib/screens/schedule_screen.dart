@@ -7,8 +7,8 @@ import '../core/theme.dart';
 import '../models/schedule.dart';
 import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
-import '../services/notification_service.dart';
 import '../services/reminder_scheduler.dart';
+import '../services/reminder_sync_service.dart';
 import 'settings_screen.dart';
 
 /// Shows the bin collection schedule and lets the user set reminders.
@@ -20,7 +20,6 @@ class ScheduleScreen extends StatefulWidget {
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
-  bool _remindersEnabled = false;
   bool _scheduling = false;
 
   @override
@@ -72,7 +71,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             _NextCollectionCard(schedule: schedule),
             const SizedBox(height: 24),
             _ReminderCard(
-              enabled: _remindersEnabled,
+              enabled: settings.remindersEnabled,
               scheduling: _scheduling,
               reminderTime: settings.reminderTime,
               onToggle: (value) => _toggleReminders(value, schedule, settings),
@@ -101,29 +100,39 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     Schedule schedule,
     SettingsProvider settings,
   ) async {
-    setState(() {
-      _remindersEnabled = value;
-      _scheduling = true;
-    });
+    final sync = context.read<ReminderSyncService>();
+    setState(() => _scheduling = true);
 
-    final notifications = context.read<NotificationService>();
-    if (value) {
-      final collections = <String, List<String>>{};
-      for (final c in schedule.collections) {
-        collections[c.name] = c.dates;
+    try {
+      if (value) {
+        // Never let the switch claim reminders are on when the OS is going to
+        // drop them on the floor.
+        final granted = await sync.requestPermissions();
+        if (!granted) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Turn on notifications for this app in your device settings to '
+                'get bin reminders.',
+              ),
+            ),
+          );
+          return;
+        }
       }
-      final reminders = ReminderScheduler.scheduleFor(
-        collections: collections,
-        now: DateTime.now(),
+
+      // The sync service owns which dates may be reminded about, so the
+      // switch and the launch-time re-sync can never disagree.
+      await sync.sync(
+        schedule: schedule,
+        enabled: value,
         reminderTime: settings.reminderTime,
       );
-      await notifications.scheduleReminders(reminders);
-    } else {
-      await notifications.cancelAll();
+      await settings.setRemindersEnabled(value);
+    } finally {
+      if (mounted) setState(() => _scheduling = false);
     }
-
-    if (!mounted) return;
-    setState(() => _scheduling = false);
   }
 }
 

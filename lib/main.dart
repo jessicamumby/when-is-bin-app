@@ -10,6 +10,7 @@ import 'providers/lookup_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/notification_service.dart';
+import 'services/reminder_sync_service.dart';
 import 'services/when_is_bins_api.dart';
 
 Future<void> main() async {
@@ -25,17 +26,33 @@ Future<void> main() async {
   final notificationService = NotificationService();
   await notificationService.init();
 
+  final settings = SettingsProvider(prefs);
+  final reminderSync = ReminderSyncService(notifications: notificationService);
+
+  // Reminders outlive the schedule they came from, so re-derive them on every
+  // launch: a schedule that has moved on, or a switch the user turned off
+  // before killing the app, takes effect without waiting for another lookup.
+  try {
+    await reminderSync.sync(
+      schedule: settings.savedSchedule,
+      enabled: settings.remindersEnabled,
+      reminderTime: settings.reminderTime,
+    );
+  } catch (_) {
+    // A notification failure must never stop the app from starting.
+    debugPrint('Reminder re-sync failed on launch.');
+  }
+
   runApp(
     MultiProvider(
       providers: [
         Provider<WhenIsBinsApi>.value(value: api),
         Provider<NotificationService>.value(value: notificationService),
+        Provider<ReminderSyncService>.value(value: reminderSync),
         ChangeNotifierProvider(
           create: (_) => LookupProvider(api: api),
         ),
-        ChangeNotifierProvider(
-          create: (_) => SettingsProvider(prefs),
-        ),
+        ChangeNotifierProvider.value(value: settings),
       ],
       child: const WhenIsBinApp(),
     ),
