@@ -50,13 +50,27 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('SettingsProvider', () {
-    test('defaults to evening reminder and no saved address', () async {
+    test('defaults to evening reminder, no saved address, not onboarded',
+        () async {
       SharedPreferences.setMockInitialValues({});
       final provider = SettingsProvider(await SharedPreferences.getInstance());
 
       expect(provider.reminderTime, ReminderTime.evening);
       expect(provider.savedAddress, isNull);
       expect(provider.savedPostcode, isNull);
+      expect(provider.isOnboarded, isFalse);
+    });
+
+    test('markOnboarded persists the flag', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+
+      await provider.markOnboarded();
+
+      expect(provider.isOnboarded, isTrue);
+      final reloaded = SettingsProvider(prefs);
+      expect(reloaded.isOnboarded, isTrue);
     });
 
     test('persists a chosen reminder time', () async {

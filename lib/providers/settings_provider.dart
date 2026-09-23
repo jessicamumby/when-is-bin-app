@@ -21,10 +21,12 @@ class SettingsProvider extends ChangeNotifier {
     _savedPropertyId = _prefs.getString(_kPropertyId);
     _savedScheduleEtag = _prefs.getString(_kScheduleEtag);
     _readSavedSchedule();
+    _onboarded = _prefs.getBool(_kOnboarded) ?? false;
   }
 
   static const _kReminderTime = 'reminder_time';
   static const _kRemindersEnabled = 'reminders_enabled';
+  static const _kOnboarded = 'onboarded';
   static const _kAddress = 'saved_address';
   static const _kPostcode = 'saved_postcode';
   static const _kPropertyId = 'saved_property_id';
@@ -39,6 +41,7 @@ class SettingsProvider extends ChangeNotifier {
   String? _savedPostcode;
   String? _savedPropertyId;
   String? _savedScheduleEtag;
+  late bool _onboarded;
 
   bool _hasSavedSchedule = false;
   bool _savedProvisional = false;
@@ -58,6 +61,9 @@ class SettingsProvider extends ChangeNotifier {
   String? get savedAddress => _savedAddress;
   String? get savedPostcode => _savedPostcode;
   String? get savedPropertyId => _savedPropertyId;
+
+  /// Whether the first-launch onboarding has been completed.
+  bool get isOnboarded => _onboarded;
 
   /// The ETag that came with the saved schedule, to be sent as `If-None-Match`
   /// when the schedule is re-checked. Null until the API has told us one.
@@ -191,6 +197,14 @@ class SettingsProvider extends ChangeNotifier {
     } else {
       await _prefs.setString(_kScheduleEtag, etag);
     }
+  }
+
+  /// Marks the onboarding flow as complete. Persisted so it only shows
+  /// on the first launch.
+  Future<void> markOnboarded() async {
+    _onboarded = true;
+    await _prefs.setBool(_kOnboarded, true);
+    notifyListeners();
   }
 
   Future<void> clearSavedAddress() async {
