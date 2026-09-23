@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:when_is_bin_app/core/theme.dart';
 import 'package:when_is_bin_app/screens/about_screen.dart';
@@ -120,6 +121,52 @@ void main() {
       final theme = Theme.of(tester.element(find.byType(AboutScreen)));
       expect(theme.brightness, Brightness.light);
       expect(theme.scaffoldBackgroundColor, AppColors.paper);
+    });
+
+    testWidgets('announces the inline links as buttons, and only the links',
+        (tester) async {
+      // A GestureDetector around a Text is invisible to assistive tech: no
+      // button role, nothing to tap by voice. These three links are the only
+      // way out of the app from this screen.
+      final handle = tester.ensureSemantics();
+
+      await pumpAbout(tester);
+
+      // This Flutter has no SemanticsTester/includesNodeWith any more, so walk
+      // the tree the way a screen reader would.
+      final buttonLabels = <String>{};
+      void walk(SemanticsNode node) {
+        final data = node.getSemanticsData();
+        if (data.flagsCollection.isButton && data.label.isNotEmpty) {
+          buttonLabels.add(data.label);
+        }
+        node.visitChildren((child) {
+          walk(child);
+          return true;
+        });
+      }
+
+      // The non-deprecated `rootPipelineOwner` has no semantics owner in a widget
+      // test — it lives on the view's pipeline owner, which is what this
+      // deprecated accessor returns.
+      // ignore: deprecated_member_use
+      walk(tester.binding.pipelineOwner.semanticsOwner!.rootSemanticsNode!);
+
+      expect(
+        buttonLabels,
+        containsAll(<String>['Sources', 'Privacy', 'AI agents']),
+        reason: 'each tappable link must be its own labelled button',
+      );
+      // Exactly three: when a link is the last span in a paragraph, an
+      // uncontained Semantics annotation merges upward and turns the whole
+      // sentence into one button — announced as a button, tappable anywhere.
+      expect(
+        buttonLabels,
+        hasLength(3),
+        reason: 'only the links should be exposed as buttons, got $buttonLabels',
+      );
+
+      handle.dispose();
     });
   });
 }

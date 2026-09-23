@@ -1,0 +1,22 @@
+# Release signing for Google Play. Copy this file to android/key.properties and
+# fill in real values. android/key.properties and your keystore are gitignored —
+# keep both somewhere safe and backed up: losing the upload key means you cannot
+# ship an update to an existing listing.
+#
+# Create the upload keystore with (run from the repo root; choose your own
+# passwords and store them in your password manager):
+#
+#   keytool -genkeypair -v \
+#     -keystore android/upload-keystore.jks \
+#     -storetype JKS -keyalg RSA -keysize 2048 -validity 10000 \
+#     -alias upload
+#
+# Then enrol in Play App Signing in the Play Console and upload the AAB built
+# with this key (`flutter build appbundle --release`).
+
+storePassword=your-store-password
+keyPassword=your-key-password
+keyAlias=upload
+# Path is resolved relative to android/app, so ../upload-keystore.jks means
+# android/upload-keystore.jks.
+storeFile=../upload-keystore.jks

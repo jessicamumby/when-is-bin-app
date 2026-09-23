@@ -28,3 +28,73 @@ jobs:
 
       - name: Run tests
         run: flutter test
+
+  # A release build is the only thing that exercises the release manifest and
+  # the signing configuration: debug builds merge src/debug/AndroidManifest.xml,
+  # which is how a release APK with no INTERNET permission once passed every
+  # other check. These assertions run against the artifact that would be
+  # uploaded, not against the source.
+  release-artifact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create .env
+        run: cp .env.example .env
+
+      - name: Refuse to ship an API token inside the bundle
+        run: |
+          # The .env asset is bundled into the app in plain text, so a token
+          # left in it is readable by anyone who downloads the app.
+          if grep -qE '^[[:space:]]*WHENISBINS_API_TOKEN=.+' .env; then
+            echo "::error::.env carries a WHENISBINS_API_TOKEN. It would ship inside the app bundle in plain text. Keep the shipped token empty."
+            exit 1
+          fi
+          echo "No API token in the bundled .env."
+
+      - name: Build the Play upload bundle
+        run: flutter build appbundle --release
+
+      - name: Assert what actually ships
+        run: |
+          set -euo pipefail
+          AAB=build/app/outputs/bundle/release/app-release.aab
+          unzip -p "$AAB" base/manifest/AndroidManifest.xml > /tmp/manifest.bin
+
+          check() {
+            if ! grep -aq "$1" /tmp/manifest.bin; then
+              echo "::error::$2"
+              exit 1
+            fi
+          }
+          absent() {
+            if grep -aq "$1" /tmp/manifest.bin; then
+              echo "::error::$2"
+              exit 1
+            fi
+          }
+
+          check "android.permission.INTERNET" \
+            "The release manifest has no INTERNET permission, so the shipped app cannot reach the WhenIsBins API. It belongs in src/main/AndroidManifest.xml, not only in the debug/profile manifests."
+          check "interlocalnotifications.ScheduledNotificationReceiver" \
+            "The scheduled-notification receiver is missing, so reminder broadcasts have no recipient and no notification is ever posted."
+          check "interlocalnotifications.ScheduledNotificationBootReceiver" \
+            "The boot receiver is missing, so reminders do not survive a restart."
+          absent "SCHEDULE_EXACT_ALARM" \
+            "The exact-alarm permission is declared but reminders are scheduled with inexactAllowWhileIdle."
+
+          echo "Release manifest assertions passed."
+
+      - name: Tell the truth about how the bundle is signed
+        run: |
+          if [ -f android/key.properties ]; then
+            echo "Signed with the upload keystore from android/key.properties."
+          else
+            echo "::warning::No android/key.properties, so this bundle is DEBUG-signed and cannot be uploaded to Google Play. Configure the upload keystore before publishing (see android/key.properties.example)."
+          fi
