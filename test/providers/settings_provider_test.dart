@@ -285,4 +285,94 @@ void main() {
       expect(reloaded.savedAddress, isNull);
     });
   });
+
+  group('SettingsProvider schedule etag', () {
+    test('has no etag by default', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      expect(provider.savedScheduleEtag, isNull);
+    });
+
+    test('persists the etag with the schedule across a cold start', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+
+      await SettingsProvider(prefs).saveSchedule(
+        buildSchedule(),
+        etag: '"v1-abc123"',
+      );
+
+      expect(SettingsProvider(prefs).savedScheduleEtag, '"v1-abc123"');
+    });
+
+    test('a schedule saved without an etag keeps the stored one', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+      await provider.saveSchedule(buildSchedule(), etag: '"v1-abc123"');
+
+      // The same property looked up again: its etag is still the current one.
+      await provider.saveSchedule(buildSchedule());
+
+      expect(provider.savedScheduleEtag, '"v1-abc123"');
+    });
+
+    test('saving the same address again keeps the etag', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+      await provider.saveSchedule(buildSchedule(), etag: '"v1-abc123"');
+
+      await provider.saveAddress(
+        address: '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+        postcode: 'CB4 2HX',
+        propertyId: 'p:4c5ee6c2f2c7c959',
+      );
+
+      expect(provider.savedScheduleEtag, '"v1-abc123"');
+    });
+
+    test('switching to another address drops a stale etag', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+      await provider.saveSchedule(buildSchedule(), etag: '"v1-abc123"');
+
+      await provider.saveAddress(
+        address: '1 OTHER ROAD, CAMBRIDGE, CB1 1AA',
+        postcode: 'CB1 1AA',
+        propertyId: 'p:other',
+      );
+
+      expect(provider.savedScheduleEtag, isNull);
+      expect(SettingsProvider(prefs).savedScheduleEtag, isNull);
+    });
+
+    test('a schedule for a different property drops a stale etag', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+      await provider.saveSchedule(buildSchedule(), etag: '"v1-abc123"');
+
+      await provider.saveSchedule(const Schedule(
+        propertyId: 'p:other',
+        addressMatch: 'exact',
+      ));
+
+      expect(provider.savedScheduleEtag, isNull);
+    });
+
+    test('clearing the saved address clears the etag', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+      await provider.saveSchedule(buildSchedule(), etag: '"v1-abc123"');
+
+      await provider.clearSavedAddress();
+
+      expect(provider.savedScheduleEtag, isNull);
+      expect(SettingsProvider(prefs).savedScheduleEtag, isNull);
+    });
+  });
 }
