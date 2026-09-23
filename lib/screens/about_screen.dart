@@ -84,14 +84,24 @@ class AboutScreen extends StatelessWidget {
   InlineSpan _link(String label, String url) => WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
         baseline: TextBaseline.alphabetic,
-        child: GestureDetector(
-          onTap: () => openLink(Uri.parse(url)),
-          child: Text(
-            label,
-            style: _paragraphStyle.copyWith(
-              color: AppColors.teal,
-              decoration: TextDecoration.underline,
-              decorationColor: AppColors.teal,
+        child: Semantics(
+          // container: true gives the link its own node. Without it the
+          // annotation merges upward into the paragraph, so a link that ends
+          // the paragraph turns the entire sentence into one button — announced
+          // as a button, and tappable anywhere along the line.
+          container: true,
+          // A GestureDetector around a Text is invisible to assistive tech: no
+          // button role, nothing to tap by voice.
+          button: true,
+          child: GestureDetector(
+            onTap: () => openLink(Uri.parse(url)),
+            child: Text(
+              label,
+              style: _paragraphStyle.copyWith(
+                color: AppColors.teal,
+                decoration: TextDecoration.underline,
+                decorationColor: AppColors.teal,
+              ),
             ),
           ),
         ),

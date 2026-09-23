@@ -1,13 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app is a client of the WhenIsBins API, so every screen needs this.
+         It belongs in the main manifest: src/debug and src/profile exist for
+         Flutter's hot-reload tooling and are NOT merged into a release build,
+         which is how a release APK shipped without network access. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Notifications for bin collection reminders (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-    <!-- Schedule exact alarms for reliable reminder delivery -->
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- Reminders are scheduled with inexactAllowWhileIdle, so the sensitive
+         SCHEDULE_EXACT_ALARM permission is deliberately NOT requested. This one
+         is what lets the boot receiver below re-arm them after a restart. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
-        android:label="When Is Bin App"
+        android:label="When Is Bins"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -30,6 +37,26 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- flutter_local_notifications delivers a scheduled reminder through
+             these two receivers. The plugin declares neither itself and its
+             README requires them in the app manifest: without them the alarm
+             fires, the broadcast has no recipient, and no notification is ever
+             posted — silently, with no error and green tests. The boot receiver
+             re-arms reminders after a restart or an app update, because
+             AlarmManager alarms survive neither. -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false" />
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
