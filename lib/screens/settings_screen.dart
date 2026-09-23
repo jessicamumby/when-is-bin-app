@@ -23,9 +23,12 @@ class SettingsScreen extends StatelessWidget {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'When should we remind you to put the bins out?',
-            style: TextStyle(fontSize: 16, color: AppColors.muted),
+            style: TextStyle(
+              fontSize: 16,
+              color: AppColors.mutedFor(Theme.of(context).brightness),
+            ),
           ),
           const SizedBox(height: 12),
           RadioGroup<ReminderTime>(
@@ -63,9 +66,12 @@ class SettingsScreen extends StatelessWidget {
               child: const Text('Remove saved address'),
             ),
           ] else
-            const Text(
+            Text(
               'No address saved.',
-              style: TextStyle(fontSize: 16, color: AppColors.muted),
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.mutedFor(Theme.of(context).brightness),
+              ),
             ),
         ],
       ),

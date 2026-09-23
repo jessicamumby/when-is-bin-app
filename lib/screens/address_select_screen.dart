@@ -32,7 +32,10 @@ class AddressSelectScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               '${addressLookup.council?.name ?? 'Your council'} \u2022 ${addressLookup.postcode}',
-              style: const TextStyle(fontSize: 16, color: AppColors.muted),
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.mutedFor(Theme.of(context).brightness),
+              ),
             ),
             const SizedBox(height: 24),
             if (lookup.isLoading)
@@ -99,7 +102,10 @@ class _AddressTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.home_outlined, color: AppColors.teal),
+            Icon(
+              Icons.home_outlined,
+              color: AppColors.accentFor(Theme.of(context).brightness),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -107,7 +113,10 @@ class _AddressTile extends StatelessWidget {
                 style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.muted),
+            Icon(
+              Icons.chevron_right,
+              color: AppColors.mutedFor(Theme.of(context).brightness),
+            ),
           ],
         ),
       ),
