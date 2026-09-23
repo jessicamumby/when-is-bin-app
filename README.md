@@ -60,7 +60,21 @@ flutter test
 flutter analyze
 ```
 
-Tests are written first (TDD) and cover models, the API client, reminder scheduling, notification content, providers, and the home screen.
+Tests are written first (TDD) and cover models, the API client, reminder scheduling, notification content, providers, the home screen, and the platform icon assets (`test/app_icons_test.dart`).
+
+## App icons
+
+Launcher artwork was generated with [Icon Kitchen](https://icon.kitchen/) and is committed verbatim to the platform folders:
+
+- `android/app/src/main/res/mipmap-*/` — legacy `ic_launcher.png` per density, plus the adaptive icon: `mipmap-anydpi-v26/ic_launcher.xml` referencing `ic_launcher_background`, `ic_launcher_foreground` and `ic_launcher_monochrome` (Android 13+ themed icons). Layers keep their alpha channel because they are composited.
+- `ios/Runner/Assets.xcassets/AppIcon.appiconset/` — the full iPhone/iPad/CarPlay matrix plus the 1024px marketing icon, described by `Contents.json`.
+
+Two rules when regenerating:
+
+1. **iOS icons must be saved without an alpha channel.** Icon Kitchen emits RGBA PNGs even when every pixel is opaque; App Store Connect rejects icons that carry an alpha channel, so convert them to RGB (`sips -s format png`, or `PIL.Image.convert('RGB')`) before committing. `test/app_icons_test.dart` fails if any iOS icon regains an alpha channel.
+2. **Keep the filenames** the `Contents.json` references, and delete the Flutter template `Icon-App-*.png` files.
+
+`flutter test test/app_icons_test.dart` asserts every icon the manifests and asset catalogue reference exists, is a real PNG, and has the pixel size its platform expects.
 
 ## CI
 
