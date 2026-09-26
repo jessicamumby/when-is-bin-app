@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../models/schedule.dart';
 import 'notification_service.dart';
 import 'reminder_scheduler.dart';
@@ -12,14 +14,32 @@ class ReminderSyncService {
   ReminderSyncService({
     required NotificationScheduler notifications,
     DateTime Function()? now,
+    this.permissionTimeout = const Duration(seconds: 5),
   })  : _notifications = notifications,
         _now = now ?? DateTime.now;
 
   final NotificationScheduler _notifications;
   final DateTime Function() _now;
 
+  /// How long to wait for the OS permission verdict before treating the
+  /// request as denied. An Android activity recreation mid-request can orphan
+  /// the permission callback so its future never resolves; an unbounded wait
+  /// would strand onboarding and the Settings toggle on a dialog that already
+  /// closed.
+  final Duration permissionTimeout;
+
   /// Ask the OS for permission to post notifications; true when granted.
-  Future<bool> requestPermissions() => _notifications.requestPermissions();
+  ///
+  /// Bounded: a platform that never answers is treated as denied rather than
+  /// hanging the caller, and a platform that errors is treated the same so a
+  /// permission hiccup never blocks the reminder flow.
+  Future<bool> requestPermissions() async {
+    try {
+      return await _notifications.requestPermissions().timeout(permissionTimeout);
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Apply [enabled] to [schedule]: schedule one reminder per upcoming
   /// collection, or cancel everything when reminders are off or there is

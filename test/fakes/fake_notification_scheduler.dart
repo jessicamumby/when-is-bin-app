@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:when_is_bin_app/services/notification_service.dart';
 import 'package:when_is_bin_app/services/reminder_scheduler.dart';
 
@@ -9,10 +11,17 @@ class FakeNotificationScheduler implements NotificationScheduler {
   int permissionRequests = 0;
   bool permissionGranted = true;
 
+  /// When true, [requestPermissions] never resolves — the orphaned Android
+  /// permission callback.
+  bool hangPermissionRequest = false;
+
   @override
-  Future<bool> requestPermissions() async {
+  Future<bool> requestPermissions() {
     permissionRequests++;
-    return permissionGranted;
+    if (hangPermissionRequest) {
+      return Completer<bool>().future;
+    }
+    return Future.value(permissionGranted);
   }
 
   @override

@@ -273,6 +273,30 @@ void main() {
       expect(notifications.scheduleCount, 1);
       expect(notifications.lastReminders, isNotEmpty);
     });
+
+    testWidgets(
+        'completes onboarding even when the permission dialog never '
+        'returns a verdict', (tester) async {
+      // The orphaned Android permission callback: the OS box appears, the
+      // user taps Allow or Don't allow, but the plugin's onRequestPermissions
+      // result never reaches the waiting Dart future, so `await` never
+      // completes. The app must not strand the user on onboarding forever.
+      final settings = await makeSettings();
+      final lookup = await lookupWithSchedule();
+      final notifications = FakeNotificationService()
+        ..hangPermissionRequest = true;
+
+      await tester.pumpWidget(buildApp(lookup, settings, notifications));
+
+      await tester.tap(find.text('Turn on reminders'));
+      await tester.pump();
+
+      // A real permission dialog would resolve well inside this budget; a hung
+      // one must not block the user from progressing.
+      await tester.pump(const Duration(seconds: 10));
+
+      expect(settings.isOnboarded, isTrue);
+    });
   });
 
   group('Onboarding gating', () {

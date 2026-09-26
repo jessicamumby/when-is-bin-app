@@ -283,5 +283,22 @@ void main() {
       expect(await sync.requestPermissions(), isFalse);
       expect(scheduler.permissionRequests, 1);
     });
+
+    test(
+        'treats a permission request that never resolves as denied instead '
+        'of hanging', () async {
+      // The orphaned Android onRequestPermissionsResult never reaches the
+      // waiting Dart future. Bounded so the caller (onboarding, the Settings
+      // toggle) is never stranded.
+      final scheduler = FakeNotificationScheduler()
+        ..hangPermissionRequest = true;
+      final sync = ReminderSyncService(
+        notifications: scheduler,
+        permissionTimeout: const Duration(milliseconds: 1),
+      );
+
+      expect(await sync.requestPermissions(), isFalse);
+      expect(scheduler.permissionRequests, 1);
+    });
   });
 }

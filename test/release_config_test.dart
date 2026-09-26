@@ -82,6 +82,19 @@ void main() {
       }
     });
 
+    test('does not pin the activity to an empty task affinity', () {
+      // Android's notification permission dialog is delivered to the activity
+      // that requested it. `taskAffinity=""` puts MainActivity in its own
+      // fresh task, which on recreation mid-request orphans the plugin's
+      // onRequestPermissionsResult — the Dart future never resolves and
+      // onboarding/looks stuck. The manifest must keep the default affinity.
+      expect(
+        manifest,
+        isNot(contains('android:taskAffinity=""')),
+        reason: 'an empty task affinity breaks notification permission results',
+      );
+    });
+
     test('does not request the exact-alarm permission it never uses', () {
       // Reminders are scheduled with inexactAllowWhileIdle, so this sensitive
       // permission buys nothing and invites review scrutiny on Play.
