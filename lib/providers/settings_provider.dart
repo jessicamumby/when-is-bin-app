@@ -50,6 +50,7 @@ class SettingsProvider extends ChangeNotifier {
   List<ByDateEntry> _savedByDate = const [];
   String? _savedCalendarUrl;
   String? _savedRetrievedAt;
+  String? _savedNotes;
 
   ReminderTime get reminderTime => _reminderTime;
 
@@ -77,6 +78,10 @@ class SettingsProvider extends ChangeNotifier {
   String? get savedCalendarUrl => _savedCalendarUrl;
   String? get savedRetrievedAt => _savedRetrievedAt;
 
+  /// The council's own caveats for the saved schedule — the plain-English
+  /// reasons its dates may still move.
+  String? get savedNotes => _savedNotes;
+
   /// The persisted schedule rebuilt as a model, or null when nothing is saved.
   Schedule? get savedSchedule {
     if (!_hasSavedSchedule) return null;
@@ -88,6 +93,7 @@ class SettingsProvider extends ChangeNotifier {
       calendarUrl: _savedCalendarUrl,
       retrievedAt: _savedRetrievedAt,
       provisional: _savedProvisional,
+      notes: _savedNotes,
     );
   }
 
@@ -111,6 +117,7 @@ class SettingsProvider extends ChangeNotifier {
           .toList();
       _savedCalendarUrl = json['calendar_url'] as String?;
       _savedRetrievedAt = json['retrieved_at'] as String?;
+      _savedNotes = json['notes'] as String?;
       _hasSavedSchedule = true;
     } on FormatException {
       // Unreadable blob: treat as "nothing saved" rather than crashing every
@@ -168,6 +175,7 @@ class SettingsProvider extends ChangeNotifier {
     _savedByDate = schedule.byDate;
     _savedCalendarUrl = schedule.calendarUrl;
     _savedRetrievedAt = schedule.retrievedAt;
+    _savedNotes = schedule.notes;
 
     await _prefs.setString(_kPropertyId, schedule.propertyId);
     await _prefs.setString(
@@ -180,6 +188,7 @@ class SettingsProvider extends ChangeNotifier {
         'calendar_url': schedule.calendarUrl,
         'retrieved_at': schedule.retrievedAt,
         'provisional': schedule.provisional,
+        'notes': schedule.notes,
       }),
     );
     if (etag != null) {
@@ -218,6 +227,7 @@ class SettingsProvider extends ChangeNotifier {
     _savedByDate = const [];
     _savedCalendarUrl = null;
     _savedRetrievedAt = null;
+    _savedNotes = null;
     _savedScheduleEtag = null;
     await _prefs.remove(_kAddress);
     await _prefs.remove(_kPostcode);

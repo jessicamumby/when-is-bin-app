@@ -56,6 +56,7 @@ void main() {
     bool provisional = false,
     String? dateConfidence,
     String? dateCompleteness,
+    String? notes,
   }) {
     return Schedule(
       propertyId: 'p:4c5ee6c2f2c7c959',
@@ -63,6 +64,7 @@ void main() {
       provisional: provisional,
       dateConfidence: dateConfidence,
       dateCompleteness: dateCompleteness,
+      notes: notes,
       collections: [
         Collection(
           name: 'Black bin',
@@ -397,6 +399,35 @@ void main() {
     expect(find.text('We could not load your bin days.'), findsOneWidget);
     expect(find.text('Try again'), findsNothing);
     expect(find.text('Search for your postcode'), findsOneWidget);
+  });
+
+  testWidgets('shows the council caveats as a muted line', (tester) async {
+    final settings = await makeSettings();
+    const notes = 'Assisted collections move back a day after a bank holiday.';
+    final note = find.text(notes);
+
+    await tester.pumpWidget(
+      buildScheduleApp(settings, schedule(notes: notes), theme: AppTheme.light),
+    );
+
+    expect(note, findsOneWidget);
+    expect(textColour(tester, note), AppColors.muted,
+        reason: 'a caveat is secondary to the dates it qualifies');
+    // The caveat sits with the address it applies to, above the next date.
+    expect(
+      tester.getTopLeft(note).dy,
+      lessThan(tester.getTopLeft(find.text('Put out: Black bin')).dy),
+    );
+  });
+
+  testWidgets('shows no caveat line when the council published none',
+      (tester) async {
+    final settings = await makeSettings();
+
+    await tester.pumpWidget(buildScheduleApp(settings, schedule()));
+
+    expect(find.text(''), findsNothing,
+        reason: 'an empty caveat must not leave a blank line');
   });
 
   group('scheduleDateCaveat', () {

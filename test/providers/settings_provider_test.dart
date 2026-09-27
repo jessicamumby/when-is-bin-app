@@ -4,10 +4,11 @@ import 'package:when_is_bin_app/models/schedule.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/services/reminder_scheduler.dart';
 
-Schedule buildSchedule() {
-  return const Schedule(
+Schedule buildSchedule({String? notes}) {
+  return Schedule(
     propertyId: 'p:4c5ee6c2f2c7c959',
     addressMatch: 'exact',
+    notes: notes,
     collections: [
       Collection(
         name: 'Black bin',
@@ -171,6 +172,45 @@ void main() {
   });
 
   group('SettingsProvider saved schedule', () {
+    test('has no saved notes by default', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      expect(provider.savedNotes, isNull);
+    });
+
+    test('persists the council notes with the schedule', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+      const notes =
+          'Assisted collections move back a day after a bank holiday.';
+
+      await provider.saveSchedule(buildSchedule(notes: notes));
+
+      expect(provider.savedNotes, notes);
+      expect(provider.savedSchedule!.notes, notes);
+
+      // The caveats survive the round-trip through storage, so a cold start
+      // still tells the user their dates can move.
+      final reloaded = SettingsProvider(prefs);
+      expect(reloaded.savedNotes, notes);
+      expect(reloaded.savedSchedule!.notes, notes);
+    });
+
+    test('clearing the saved address clears the notes', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+      await provider.saveSchedule(buildSchedule(notes: 'Communal bins.'));
+
+      await provider.clearSavedAddress();
+
+      expect(provider.savedNotes, isNull);
+      expect(provider.savedSchedule, isNull);
+      expect(SettingsProvider(prefs).savedNotes, isNull);
+    });
+
     test('has no saved schedule by default', () async {
       SharedPreferences.setMockInitialValues({});
       final provider = SettingsProvider(await SharedPreferences.getInstance());

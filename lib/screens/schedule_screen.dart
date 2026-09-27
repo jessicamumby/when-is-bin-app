@@ -89,6 +89,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       settings.savedAddress!,
                       style: TextStyle(fontSize: 16, color: muted),
                     ),
+                  // The council's own caveats belong with the address they
+                  // apply to, before the dates they qualify.
+                  if (schedule.notes != null && schedule.notes!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      schedule.notes!,
+                      style: TextStyle(fontSize: 16, color: muted),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   _NextCollectionCard(schedule: schedule),
                   const SizedBox(height: 24),
