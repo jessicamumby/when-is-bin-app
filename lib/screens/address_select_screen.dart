@@ -82,13 +82,18 @@ class AddressSelectScreen extends StatelessWidget {
                     final schedule = lookup.schedule;
                     if (schedule != null) {
                       // Persist the address and its schedule, so the home
-                      // screen shortcut works without another lookup.
+                      // screen shortcut works without another lookup. A
+                      // provisional answer is a neighbour's dates served while
+                      // the exact lookup finishes, so the schedule is never
+                      // kept; the picked address's own id is still the user's.
                       await settings.saveAddress(
                         address: candidate.label,
                         postcode: addressLookup.postcode,
                         propertyId: candidate.id,
                       );
-                      await settings.saveSchedule(schedule);
+                      if (!schedule.provisional) {
+                        await settings.saveSchedule(schedule);
+                      }
                       if (!context.mounted) return;
                       if (forceLight) {
                         // Onboarding: return to the onboarding screen, which

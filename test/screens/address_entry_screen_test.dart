@@ -20,10 +20,11 @@ void main() {
   final nextCollection = DateTime.now().add(const Duration(days: 3));
   final nextCollectionIso = DateFormat('yyyy-MM-dd').format(nextCollection);
 
-  Schedule schedule() {
+  Schedule schedule({bool provisional = false}) {
     return Schedule(
       propertyId: 'p:4c5ee6c2f2c7c959',
-      addressMatch: 'exact',
+      addressMatch: provisional ? 'postcode_representative' : 'exact',
+      provisional: provisional,
       collections: [
         Collection(
           name: 'Black bin',
@@ -620,6 +621,37 @@ void main() {
         reason: 'the API token wording must never reach the user');
   });
 
+  testWidgets('a provisional answer is shown but nothing is saved from it',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..lookupResponses = [
+        Lookup(
+          id: 'lookup-1',
+          status: 'done',
+          result: schedule(provisional: true),
+        ),
+      ];
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(
+      buildScreen(lookup, settings, lookupNeeding('property')),
+    );
+    await tester.enterText(find.byType(TextField), '15 Example Court');
+    await submitForm(tester);
+
+    // The interim answer is shown, with its label...
+    expect(find.textContaining('your address is still being checked'),
+        findsOneWidget);
+    expect(find.text('Put out: Black bin'), findsOneWidget);
+    // ...but its property id names the neighbour, not the user, so neither the
+    // address nor the schedule may be kept.
+    expect(settings.savedAddress, isNull,
+        reason: 'the provisional property id names the neighbour, not the user');
+    expect(settings.savedPropertyId, isNull);
+    expect(settings.hasSavedSchedule, isFalse);
+  });
+
   group('a failed lookup', () {
     /// Submits a form that the council refuses with `address_not_found`.
     Future<void> submitFailingLookup(
@@ -768,6 +800,38 @@ void main() {
 
       expect(find.text('Use dates from a nearby property instead?'),
           findsNothing);
+    });
+
+    testWidgets('a provisional re-pick is shown but never saved',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedAddressLookup()];
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildScreen(
+          lookup,
+          settings,
+          lookupNeeding('property', postcodeRepresentative: 'automatic'),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '1 Nowhere Road');
+      await submitForm(tester);
+
+      api.lookupResponses = [
+        Lookup(
+          id: 'lookup-2',
+          status: 'done',
+          result: schedule(provisional: true),
+        ),
+      ];
+      await tapInCard(tester, find.text('15 Example Court'));
+
+      expect(find.textContaining('your address is still being checked'),
+          findsOneWidget);
+      expect(settings.savedAddress, isNull);
+      expect(settings.hasSavedSchedule, isFalse,
+          reason: 'a neighbour answer must never be saved');
     });
   });
 }

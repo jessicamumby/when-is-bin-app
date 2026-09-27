@@ -443,17 +443,24 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
     if (schedule == null) return;
 
     final settings = context.read<SettingsProvider>();
-    await settings.saveAddress(
-      address: describeAddress(
+    // A provisional answer is the same postcode's NEIGHBOUR served while the
+    // exact lookup is still running: its property id names that neighbour, so
+    // saving either the address or the schedule would attach the user to
+    // somebody else's bin days. It is shown, with its label and the pending
+    // lookup behind it, and nothing is kept.
+    if (!schedule.provisional) {
+      await settings.saveAddress(
+        address: describeAddress(
+          postcode: lookup.postcode,
+          property: property,
+          street: street,
+          locality: locality,
+        ),
         postcode: lookup.postcode,
-        property: property,
-        street: street,
-        locality: locality,
-      ),
-      postcode: lookup.postcode,
-      propertyId: schedule.propertyId,
-    );
-    await settings.saveSchedule(schedule);
+        propertyId: schedule.propertyId,
+      );
+      await settings.saveSchedule(schedule);
+    }
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const ScheduleScreen()),

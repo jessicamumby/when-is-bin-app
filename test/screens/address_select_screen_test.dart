@@ -33,10 +33,11 @@ void main() {
   final nextCollection = DateTime.now().add(const Duration(days: 3));
   final nextCollectionIso = DateFormat('yyyy-MM-dd').format(nextCollection);
 
-  Schedule schedule() {
+  Schedule schedule({bool provisional = false}) {
     return Schedule(
       propertyId: 'p:4c5ee6c2f2c7c959',
-      addressMatch: 'exact',
+      addressMatch: provisional ? 'postcode_representative' : 'exact',
+      provisional: provisional,
       collections: [
         Collection(
           name: 'Black bin',
@@ -253,5 +254,61 @@ void main() {
     );
     expect(find.text("Check on your council's site"), findsOneWidget,
         reason: 'the way to check by hand belongs with the failure');
+  });
+
+  testWidgets('a provisional answer is shown but never saved', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsProvider(prefs);
+    final api = FakeWhenIsBinsApi()
+      ..lookupResponses = [
+        Lookup(id: 'lookup-1', status: 'done', result: schedule(provisional: true)),
+      ];
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(buildApp(lookup, settings));
+    await tester.tap(find.text(candidate.label));
+    await tester.pumpAndSettle();
+
+    // The interim answer is on screen, with its label...
+    expect(find.textContaining('your address is still being checked'),
+        findsOneWidget);
+    expect(find.text('Put out: Black bin'), findsOneWidget);
+    // ...but a neighbour's dates are never kept as the user's own.
+    expect(settings.hasSavedSchedule, isFalse,
+        reason: 'a provisional answer must never be persisted');
+    expect(settings.savedSchedule, isNull);
+    expect(SettingsProvider(prefs).hasSavedSchedule, isFalse,
+        reason: 'and it must not survive a cold start either');
+  });
+
+  testWidgets('a provisional answer does not overwrite a saved schedule',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsProvider(prefs);
+    await settings.saveAddress(
+      address: '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+      postcode: 'CB4 2HX',
+      propertyId: 'p:4c5ee6c2f2c7c959',
+    );
+    await settings.saveSchedule(schedule());
+    final api = FakeWhenIsBinsApi()
+      ..lookupResponses = [
+        Lookup(
+          id: 'lookup-2',
+          status: 'done',
+          result: schedule(provisional: true),
+        ),
+      ];
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(buildApp(lookup, settings));
+    await tester.tap(find.text(candidate.label));
+    await tester.pumpAndSettle();
+
+    expect(settings.savedSchedule, isNotNull);
+    expect(settings.savedSchedule!.provisional, isFalse,
+        reason: 'the confirmed schedule is still the saved one');
   });
 }
