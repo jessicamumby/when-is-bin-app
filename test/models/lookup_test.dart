@@ -81,5 +81,59 @@ void main() {
       expect(lookup.isTerminal, isTrue);
       expect(lookup.detail, "The council's system doesn't list that exact address.");
     });
+
+    test('parses the problem on a failed lookup', () {
+      final json = {
+        'id': 'abc',
+        'status': 'failed',
+        'problem': 'address_not_found',
+        'detail': "The council's system doesn't list that exact address.",
+      };
+
+      final lookup = Lookup.fromJson(json);
+
+      expect(lookup.problem, 'address_not_found');
+    });
+
+    test('parses the candidates the council offered instead', () {
+      final json = {
+        'id': 'abc',
+        'status': 'failed',
+        'problem': 'address_not_found',
+        'candidates': [
+          {'id': 'p:abc', 'label': '15 EXAMPLE COURT, CAMBRIDGE'},
+          {'id': 'p:def', 'label': '16 EXAMPLE COURT, CAMBRIDGE'},
+        ],
+      };
+
+      final lookup = Lookup.fromJson(json);
+
+      expect(lookup.candidates, hasLength(2));
+      expect(lookup.candidates.first.id, 'p:abc');
+      expect(lookup.candidates.first.label, '15 EXAMPLE COURT, CAMBRIDGE');
+      expect(lookup.candidates.last.label, '16 EXAMPLE COURT, CAMBRIDGE');
+    });
+
+    test('parses how many lookups are ahead of this one', () {
+      final json = {
+        'id': 'abc',
+        'status': 'queued',
+        'queue_ahead': 4,
+      };
+
+      final lookup = Lookup.fromJson(json);
+
+      expect(lookup.queueAhead, 4);
+    });
+
+    test('defaults the failure and queue fields when absent', () {
+      final json = {'id': 'abc', 'status': 'running'};
+
+      final lookup = Lookup.fromJson(json);
+
+      expect(lookup.problem, isNull);
+      expect(lookup.candidates, isEmpty);
+      expect(lookup.queueAhead, isNull);
+    });
   });
 }
