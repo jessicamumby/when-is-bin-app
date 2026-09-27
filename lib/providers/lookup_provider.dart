@@ -29,6 +29,10 @@ class LookupProvider extends ChangeNotifier {
   /// only stops a server that answers instantly from being hammered.
   static const defaultReconnectDelay = Duration(seconds: 1);
 
+  /// The `problem` on the 429 the API's rate limiter answers with. It is the
+  /// one failure that says "not now", not "no".
+  static const _rateLimitedProblem = 'rate_limited';
+
   final WhenIsBinsApi _api;
   final Future<void> Function(Duration duration) _delay;
   final DateTime Function() _now;
@@ -83,18 +87,30 @@ class LookupProvider extends ChangeNotifier {
   Future<void> submitLookup({
     required String postcode,
     required Map<String, dynamic> address,
-  }) async {
+  }) {
+    return _submit({'postcode': postcode, ...address});
+  }
+
+  /// Create a lookup for [body] and wait for it to settle — the journey every
+  /// submission shares.
+  Future<void> _submit(Map<String, dynamic> body) async {
     _error = null;
     _pendingLookupId = null;
     _isLoading = true;
     notifyListeners();
+    String? submittedId;
     try {
       final lookup = await _api.createLookup(
-        {'postcode': postcode, ...address},
+        body,
         idempotencyKey: _newIdempotencyKey(),
       );
+      submittedId = lookup.id;
       _applySettled(await _pollUntilSettled(lookup));
     } on ApiException catch (e) {
+      // The lookup itself exists on the server even when the wait failed
+      // (a dropped connection, a timeout), so its id is kept: a later check
+      // picks the lookup up instead of paying for the same work twice.
+      _pendingLookupId = submittedId;
       _error = e;
       _schedule = null;
     } finally {
@@ -180,16 +196,34 @@ class LookupProvider extends ChangeNotifier {
     while (lookup.isPending) {
       final remaining = deadline.difference(_now());
       if (remaining <= Duration.zero) break;
-      final wait = await _api.waitForLookup(lookup.id, after: cursor);
+      final LookupWait wait;
+      try {
+        wait = await _api.waitForLookup(lookup.id, after: cursor);
+      } on ApiException catch (e) {
+        // On a mobile network many phones share one IPv4 address, so the
+        // user's fifth open wait can be rate limited through no fault of
+        // their own. The lookup itself is still running: wait out the
+        // Retry-After the server asked for and reconnect to the SAME lookup
+        // with the SAME cursor. Any other failure is the caller's to report.
+        final retryAfter = e.retryAfter;
+        if (e.problem != _rateLimitedProblem || retryAfter == null) rethrow;
+        await _sleepWithin(retryAfter, remaining);
+        continue;
+      }
       cursor = wait.cursor ?? cursor;
       lookup = wait.lookup;
       if (lookup.isTerminal) break;
       // Respect a Retry-After, but never sleep past the budget: there would be
       // no request left to make on the other side of it.
-      final requested = wait.retryAfter ?? defaultReconnectDelay;
-      await _delay(requested > remaining ? remaining : requested);
+      await _sleepWithin(wait.retryAfter ?? defaultReconnectDelay, remaining);
     }
     return lookup;
+  }
+
+  /// Sleep for [requested], but never past what is left of the wait budget:
+  /// there would be no request left to make on the other side of it.
+  Future<void> _sleepWithin(Duration requested, Duration remaining) {
+    return _delay(requested > remaining ? remaining : requested);
   }
 
   /// Record a lookup that settled — or one that is still running when the wait

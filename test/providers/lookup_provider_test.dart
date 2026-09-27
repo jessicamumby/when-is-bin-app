@@ -344,7 +344,7 @@ void main() {
       expect(provider.isLoading, isFalse);
     });
 
-    test('surfaces an ApiException raised by the wait endpoint', () async {
+    test('surfaces an ApiException raised by createLookup', () async {
       final api = FakeWhenIsBinsApi()
         ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
         ..error = const ApiException(
@@ -357,7 +357,112 @@ void main() {
       await select(provider);
 
       expect(provider.error?.problem, 'rate_limited');
+      expect(provider.pendingLookupId, isNull,
+          reason: 'no lookup was ever created, so there is none to keep');
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('pauses for the Retry-After on a mid-poll 429 and reconnects',
+        () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        // The second answer repeats: the third wait reconnects and is done.
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'running'),
+          Lookup(id: 'lookup-1', status: 'done', result: pollSchedule()),
+        ]
+        ..cursors = ['cur-1']
+        // Many phones share one IPv4 address on a mobile network, so the
+        // user's fifth open wait can be rate limited through no fault of
+        // their own: the first wait answers, the second is throttled.
+        ..waitErrors = [
+          null,
+          const ApiException(
+            statusCode: 429,
+            problem: 'rate_limited',
+            detail: 'Slow down.',
+            retryAfter: Duration(seconds: 2),
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(provider.error, isNull,
+          reason: 'a rate limit is the server problem, not the user one');
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
       expect(provider.pendingLookupId, isNull);
+      expect(api.waitCallCount, 3, reason: 'the wait is retried, not abandoned');
+      expect(api.afterCalls, [null, 'cur-1', 'cur-1'],
+          reason: 'the retry follows the same cursor as the failed wait');
+      expect(api.createLookupCalls, 1,
+          reason: 'a rate limit must never resubmit the lookup');
+      expect(slept, [
+        LookupProvider.defaultReconnectDelay,
+        const Duration(seconds: 2),
+      ], reason: 'the ordinary backoff, then the wait the server asked for');
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('a 429 without a Retry-After still surfaces as an error', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
+        ..waitErrors = [
+          const ApiException(
+            statusCode: 429,
+            problem: 'rate_limited',
+            detail: 'Slow down.',
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(provider.error?.problem, 'rate_limited',
+          reason: 'with no wait to honour there is nothing to retry with');
+      expect(slept, isEmpty);
+    });
+
+    test('never sleeps past the wait budget for a long Retry-After', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitErrors = [
+          const ApiException(
+            statusCode: 429,
+            problem: 'rate_limited',
+            detail: 'Slow down.',
+            retryAfter: Duration(minutes: 5),
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(slept, [const Duration(minutes: 2)]);
+      expect(api.waitCallCount, 1,
+          reason: 'there was no budget left for another request');
+      expect(provider.error, isNull);
+      expect(provider.pendingLookupId, 'lookup-1',
+          reason: 'the lookup is still running and kept for a later check');
+    });
+
+    test('keeps the pending lookup id when the wait itself fails', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitErrors = [
+          const ApiException(
+            statusCode: 0,
+            problem: 'timeout',
+            detail: 'The server took too long to respond. Please try again.',
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(provider.error?.problem, 'timeout');
+      expect(provider.pendingLookupId, 'lookup-1',
+          reason: 'the lookup was created: a later check must not resubmit it');
       expect(provider.isLoading, isFalse);
     });
   });
