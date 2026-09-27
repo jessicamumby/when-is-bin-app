@@ -13,11 +13,18 @@ class ApiException implements Exception {
     required this.statusCode,
     this.problem,
     this.detail,
+    this.retryAfter,
   });
 
   final int statusCode;
   final String? problem;
   final String? detail;
+
+  /// How long the server asked the caller to wait before retrying, from a
+  /// `Retry-After` response header. Null when the server sent none (or sent a
+  /// form this client cannot read), in which case the caller falls back to its
+  /// own backoff.
+  final Duration? retryAfter;
 
   @override
   String toString() => 'ApiException($statusCode, $problem, $detail)';
@@ -88,10 +95,16 @@ class WhenIsBinsApi {
     required this.baseUrl,
     this.token,
     this.timeout = defaultTimeout,
+    this.waitTimeout = defaultWaitTimeout,
   }) : _client = client;
 
   /// How long a single request may take before it is abandoned.
   static const defaultTimeout = Duration(seconds: 15);
+
+  /// The deadline for `GET /lookups/{id}/wait`, which the server deliberately
+  /// holds open (roughly 25s) before it answers. It must stay comfortably
+  /// above that hold time, so it is much longer than [defaultTimeout].
+  static const defaultWaitTimeout = Duration(seconds: 40);
 
   /// What the user is told when the server answers with something this client
   /// cannot read: a rate limiter page, a gateway error, a truncated body.
@@ -106,6 +119,9 @@ class WhenIsBinsApi {
   /// The `problem` on an [ApiException] raised when the connection failed.
   static const networkProblem = 'network';
 
+  /// The prefix `property_id` values carry. Paths want the bare token.
+  static const _propertyIdPrefix = 'p:';
+
   final http.Client _client;
   final String baseUrl;
   final String? token;
@@ -113,6 +129,10 @@ class WhenIsBinsApi {
   /// The deadline for a single request. Without it a hung network call leaves
   /// the app loading for ever.
   final Duration timeout;
+
+  /// The deadline for `/wait` requests. The server holds those open far longer
+  /// than a normal request, so they get their own budget.
+  final Duration waitTimeout;
 
   /// Resolve a postcode to its council and required address input.
   Future<AddressLookup> getAddresses(String postcode, {String? q}) async {
@@ -160,7 +180,10 @@ class WhenIsBinsApi {
         if (after != null && after.isNotEmpty) 'after': after,
       },
     );
-    final response = await _send(() => _client.get(uri, headers: _headers()));
+    final response = await _send(
+      () => _client.get(uri, headers: _headers()),
+      timeout: waitTimeout,
+    );
     return LookupWait(
       lookup: Lookup.fromJson(_decode(response)),
       cursor: _header(response, 'x-lookup-cursor'),
@@ -177,8 +200,15 @@ class WhenIsBinsApi {
     String propertyToken, {
     String? etag,
   }) async {
+    // A `property_id` (and so the id the app saves) keeps its `p:` prefix, but
+    // the schedules path wants the bare token: sending the prefixed form only
+    // worked because the API answered a 301, costing a second request on every
+    // launch check.
+    final token = propertyToken.startsWith(_propertyIdPrefix)
+        ? propertyToken.substring(_propertyIdPrefix.length)
+        : propertyToken;
     final response = await _send(() => _client.get(
-          Uri.parse('$baseUrl/schedules/$propertyToken'),
+          Uri.parse('$baseUrl/schedules/$token'),
           headers: {
             ..._headers(),
             if (etag != null && etag.isNotEmpty) 'if-none-match': etag,
@@ -209,9 +239,15 @@ class WhenIsBinsApi {
 
   /// Run a request with the configured deadline, turning transport failures
   /// into [ApiException]s so callers only ever handle one error type.
-  Future<http.Response> _send(Future<http.Response> Function() request) async {
+  ///
+  /// The `timeout` argument overrides the client-wide [timeout] for one call,
+  /// for the endpoints that need their own budget (only `/wait` does).
+  Future<http.Response> _send(
+    Future<http.Response> Function() request, {
+    Duration? timeout,
+  }) async {
     try {
-      return await request().timeout(timeout);
+      return await request().timeout(timeout ?? this.timeout);
     } on TimeoutException {
       throw const ApiException(
         statusCode: 0,
@@ -246,6 +282,9 @@ class WhenIsBinsApi {
       statusCode: response.statusCode,
       problem: body?['problem'] as String?,
       detail: (body?['detail'] as String?) ?? unexpectedResponseDetail,
+      // A 429 tells the caller how long to wait; discarding it here forced
+      // every caller to guess and retry too soon.
+      retryAfter: _retryAfter(response),
     );
   }
 

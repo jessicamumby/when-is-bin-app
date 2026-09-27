@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -89,6 +91,15 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       settings.savedAddress!,
                       style: TextStyle(fontSize: 16, color: muted),
                     ),
+                  // The council's own caveats belong with the address they
+                  // apply to, before the dates they qualify.
+                  if (schedule.notes != null && schedule.notes!.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      schedule.notes!,
+                      style: TextStyle(fontSize: 16, color: muted),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   _NextCollectionCard(schedule: schedule),
                   const SizedBox(height: 24),
@@ -125,7 +136,18 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   /// empty. Each one says what happened and offers the next step, instead of
   /// leaving the user on a bare line of text.
   Widget _placeholder(LookupProvider lookup) {
-    if (lookup.isLoading) return const _LoadingState();
+    if (lookup.isLoading) {
+      final active = lookup.activeLookup;
+      return _LoadingState(
+        // The in-flight lookup's own figure is the current one; the council
+        // the address lookup named is the fallback for the moment before it.
+        waitSeconds:
+            active?.expectedWaitSeconds ??
+                lookup.addressLookup?.council?.expectedWaitSeconds,
+        progressMessage: active?.progress?.message,
+        queueAhead: active?.queueAhead,
+      );
+    }
 
     final error = lookup.error;
     if (error != null) {
@@ -423,8 +445,21 @@ class _CalendarCard extends StatelessWidget {
 
   final String calendarUrl;
 
+  /// iOS hands a `webcal://` URL to Calendar, which offers to subscribe to it.
+  /// Android has no handler for that scheme (or for a `.ics` file), so there
+  /// the user is given the link to paste into their own calendar app.
+  bool get _subscribesInCalendar =>
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// The URL that makes iOS open its Calendar subscribe sheet.
+  String get _subscribeUrl => calendarUrl.startsWith('https://')
+      ? 'webcal://${calendarUrl.substring('https://'.length)}'
+      : calendarUrl;
+
   @override
   Widget build(BuildContext context) {
+    final muted = AppColors.mutedFor(Theme.of(context).brightness);
+
     return _InsetCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -436,20 +471,31 @@ class _CalendarCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Subscribe to your bin collection calendar feed.',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.mutedFor(Theme.of(context).brightness),
-            ),
+            style: TextStyle(fontSize: 16, color: muted),
           ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => launchUrl(
-              Uri.parse(calendarUrl),
-              mode: LaunchMode.externalApplication,
+          if (_subscribesInCalendar)
+            OutlinedButton.icon(
+              onPressed: () => launchUrl(
+                Uri.parse(_subscribeUrl),
+                mode: LaunchMode.externalApplication,
+              ),
+              icon: const Icon(Icons.calendar_today_outlined),
+              label: const Text('Open calendar feed'),
+            )
+          else ...[
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Clipboard.setData(ClipboardData(text: calendarUrl)),
+              icon: const Icon(Icons.link_outlined),
+              label: const Text('Copy calendar link'),
             ),
-            icon: const Icon(Icons.calendar_today_outlined),
-            label: const Text('Open calendar feed'),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              'Paste it into your calendar app.',
+              style: TextStyle(fontSize: 16, color: muted),
+            ),
+          ],
         ],
       ),
     );
@@ -480,21 +526,71 @@ class _InsetCard extends StatelessWidget {
 
 /// Nothing is loaded yet and a lookup is in flight.
 class _LoadingState extends StatelessWidget {
-  const _LoadingState();
+  const _LoadingState({
+    this.waitSeconds,
+    this.progressMessage,
+    this.queueAhead,
+  });
+
+  /// How long this council's lookups usually take, when the API has said.
+  final int? waitSeconds;
+
+  /// What the lookup is doing at this moment, in the API's own words.
+  final String? progressMessage;
+
+  /// How many lookups the server had ahead of this one.
+  final int? queueAhead;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          _LoadingMessage(),
-        ],
+    final muted = AppColors.mutedFor(Theme.of(context).brightness);
+    final style = TextStyle(fontSize: 16, color: muted);
+    final wait = councilWaitCopy(waitSeconds);
+    final message = progressMessage;
+    final ahead = queueAhead ?? 0;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            const _LoadingMessage(),
+            // Only ever say what the API actually told us: between them these
+            // lines are this council's own estimate, its current stage and how
+            // far down the queue this lookup is.
+            if (wait != null) ...[
+              const SizedBox(height: 8),
+              Text(wait, style: style, textAlign: TextAlign.center),
+            ],
+            if (message != null && message.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(message, style: style, textAlign: TextAlign.center),
+            ],
+            if (ahead > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'there are $ahead other lookups ahead',
+                style: style,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
+}
+
+/// How long this council's lookups usually take, in the plainest terms the
+/// figure allows. Null when there is no honest figure to give: a made-up one
+/// is worse than none.
+String? councilWaitCopy(int? seconds) {
+  if (seconds == null || seconds <= 0) return null;
+  if (seconds == 60) return 'Usually about a minute for this council';
+  return 'Usually about $seconds seconds for this council';
 }
 
 /// Split out so the message can carry the active brightness' token while the

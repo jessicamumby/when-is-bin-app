@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/theme.dart';
 import '../models/address_lookup.dart';
@@ -81,13 +82,18 @@ class AddressSelectScreen extends StatelessWidget {
                     final schedule = lookup.schedule;
                     if (schedule != null) {
                       // Persist the address and its schedule, so the home
-                      // screen shortcut works without another lookup.
+                      // screen shortcut works without another lookup. A
+                      // provisional answer is a neighbour's dates served while
+                      // the exact lookup finishes, so the schedule is never
+                      // kept; the picked address's own id is still the user's.
                       await settings.saveAddress(
                         address: candidate.label,
                         postcode: addressLookup.postcode,
                         propertyId: candidate.id,
                       );
-                      await settings.saveSchedule(schedule);
+                      if (!schedule.provisional) {
+                        await settings.saveSchedule(schedule);
+                      }
                       if (!context.mounted) return;
                       if (forceLight) {
                         // Onboarding: return to the onboarding screen, which
@@ -102,11 +108,31 @@ class AddressSelectScreen extends StatelessWidget {
                         );
                       }
                     } else if (lookup.error != null) {
+                      final councilUrl =
+                          lookup.failedLookup?.council?.lookupUrl;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(
-                            lookup.error!.detail ??
-                                'We could not find your bin days.',
+                          content: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                lookup.error!.detail ??
+                                    'We could not find your bin days.',
+                              ),
+                              // The council's own page is where the user can
+                              // check by hand, so the failure offers it.
+                              if (councilUrl != null)
+                                TextButton(
+                                  onPressed: () => launchUrl(
+                                    Uri.parse(councilUrl),
+                                    mode: LaunchMode.externalApplication,
+                                  ),
+                                  child: const Text(
+                                    "Check on your council's site",
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       );

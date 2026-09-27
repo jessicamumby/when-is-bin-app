@@ -29,6 +29,10 @@ class LookupProvider extends ChangeNotifier {
   /// only stops a server that answers instantly from being hammered.
   static const defaultReconnectDelay = Duration(seconds: 1);
 
+  /// The `problem` on the 429 the API's rate limiter answers with. It is the
+  /// one failure that says "not now", not "no".
+  static const _rateLimitedProblem = 'rate_limited';
+
   final WhenIsBinsApi _api;
   final Future<void> Function(Duration duration) _delay;
   final DateTime Function() _now;
@@ -42,6 +46,16 @@ class LookupProvider extends ChangeNotifier {
   bool _isLoading = false;
   ApiException? _error;
   String? _pendingLookupId;
+  Lookup? _failedLookup;
+
+  /// The lookup that is in flight right now, if any: what the loading screen
+  /// needs to say how long this council usually takes and how far along the
+  /// lookup has got.
+  Lookup? _activeLookup;
+
+  /// The last address submitted, kept whole so it can be resubmitted with
+  /// `allow_postcode_representative` once the user consents.
+  Map<String, dynamic>? _lastSubmittedAddress;
 
   String? get postcode => _postcode;
   AddressLookup? get addressLookup => _addressLookup;
@@ -53,6 +67,22 @@ class LookupProvider extends ChangeNotifier {
   /// It is kept so a later check can pick the lookup up (see
   /// [continuePendingLookup]) instead of submitting the same address again.
   String? get pendingLookupId => _pendingLookupId;
+
+  /// The lookup that failed, whole.
+  ///
+  /// [error] is all the UI needs to say *that* a lookup failed, but a failed
+  /// lookup also carries the reason (`problem`, e.g. `address_not_found`), the
+  /// addresses the council offered instead (`candidates`), and the link to
+  /// check by hand (`council.lookupUrl`) — that is where the user goes next, so
+  /// it is exposed as it arrived rather than flattened into a message.
+  Lookup? get failedLookup => _failedLookup;
+
+  /// The lookup that is in flight, or null when nothing is being waited for.
+  ///
+  /// It carries the council's own figures for the wait — how long it usually
+  /// takes, what stage it has reached, and how many lookups are ahead of this
+  /// one — so the loading screen can say something honest instead of spinning.
+  Lookup? get activeLookup => _activeLookup;
 
   /// Resolve a postcode to its council and required address input.
   Future<void> lookupPostcode(String postcode) async {
@@ -83,18 +113,60 @@ class LookupProvider extends ChangeNotifier {
   Future<void> submitLookup({
     required String postcode,
     required Map<String, dynamic> address,
-  }) async {
+  }) {
+    // Kept so the user can consent to a neighbour's answer later without
+    // retyping the address (see [submitWithPostcodeRepresentative]).
+    _lastSubmittedAddress = address;
+    return _submit({'postcode': postcode, ...address});
+  }
+
+  /// Re-submit the last address asking the council to answer for the nearest
+  /// property to the postcode instead of the exact one.
+  ///
+  /// Only worth offering after a `postcode_representative: 'opt_in'` answer
+  /// from `/addresses` and a lookup that failed with `address_not_found`: it is
+  /// the user's consent that decides, so this is a deliberate call and never
+  /// automatic. A no-op before any submission. The body repeats the original
+  /// address fields (so the council sees the same address), adds
+  /// `allow_postcode_representative: true`, and carries its own idempotency
+  /// key — this is new work, not a retry of the first one.
+  Future<void> submitWithPostcodeRepresentative({
+    required String postcode,
+  }) {
+    final address = _lastSubmittedAddress;
+    if (address == null) return Future<void>.value();
+    return _submit({
+      'postcode': postcode,
+      ...address,
+      'allow_postcode_representative': true,
+    });
+  }
+
+  /// Create a lookup for [body] and wait for it to settle — the journey every
+  /// submission shares.
+  Future<void> _submit(Map<String, dynamic> body) async {
     _error = null;
     _pendingLookupId = null;
+    _activeLookup = null;
     _isLoading = true;
     notifyListeners();
+    String? submittedId;
     try {
       final lookup = await _api.createLookup(
-        {'postcode': postcode, ...address},
+        body,
         idempotencyKey: _newIdempotencyKey(),
       );
+      submittedId = lookup.id;
+      // The created lookup is what the user is now waiting for: its council's
+      // expected wait and progress are theirs to see.
+      _activeLookup = lookup;
+      notifyListeners();
       _applySettled(await _pollUntilSettled(lookup));
     } on ApiException catch (e) {
+      // The lookup itself exists on the server even when the wait failed
+      // (a dropped connection, a timeout), so its id is kept: a later check
+      // picks the lookup up instead of paying for the same work twice.
+      _pendingLookupId = submittedId;
       _error = e;
       _schedule = null;
     } finally {
@@ -180,22 +252,51 @@ class LookupProvider extends ChangeNotifier {
     while (lookup.isPending) {
       final remaining = deadline.difference(_now());
       if (remaining <= Duration.zero) break;
-      final wait = await _api.waitForLookup(lookup.id, after: cursor);
+      final LookupWait wait;
+      try {
+        wait = await _api.waitForLookup(lookup.id, after: cursor);
+      } on ApiException catch (e) {
+        // On a mobile network many phones share one IPv4 address, so the
+        // user's fifth open wait can be rate limited through no fault of
+        // their own. The lookup itself is still running: wait out the
+        // Retry-After the server asked for and reconnect to the SAME lookup
+        // with the SAME cursor. Any other failure is the caller's to report.
+        final retryAfter = e.retryAfter;
+        if (e.problem != _rateLimitedProblem || retryAfter == null) rethrow;
+        await _sleepWithin(retryAfter, remaining);
+        continue;
+      }
       cursor = wait.cursor ?? cursor;
       lookup = wait.lookup;
+      // Every answer from /wait re-states the council's own figures, so the
+      // loading screen can update its wait and progress as the lookup moves.
+      _activeLookup = lookup;
+      notifyListeners();
       if (lookup.isTerminal) break;
       // Respect a Retry-After, but never sleep past the budget: there would be
       // no request left to make on the other side of it.
-      final requested = wait.retryAfter ?? defaultReconnectDelay;
-      await _delay(requested > remaining ? remaining : requested);
+      await _sleepWithin(wait.retryAfter ?? defaultReconnectDelay, remaining);
     }
     return lookup;
+  }
+
+  /// Sleep for [requested], but never past what is left of the wait budget:
+  /// there would be no request left to make on the other side of it.
+  Future<void> _sleepWithin(Duration requested, Duration remaining) {
+    return _delay(requested > remaining ? remaining : requested);
   }
 
   /// Record a lookup that settled — or one that is still running when the wait
   /// budget ran out.
   void _applySettled(Lookup settled) {
+    // A terminal lookup is nothing to wait for; one that is still running is
+    // kept, because it is still in flight behind a later check.
+    _activeLookup = settled.isTerminal ? null : settled;
     if (settled.status == 'failed') {
+      // The whole lookup is kept: the UI needs its real `problem`, the
+      // candidate addresses and the council's own link, none of which survive
+      // in an ApiException.
+      _failedLookup = settled;
       _error = ApiException(
         statusCode: 0,
         problem: 'lookup_failed',
@@ -205,6 +306,7 @@ class LookupProvider extends ChangeNotifier {
       _pendingLookupId = null;
       return;
     }
+    _failedLookup = null;
     // A partial result beats nothing, and the id is kept for a later check
     // rather than resubmitting a lookup that is merely slow.
     _schedule = settled.result ?? _schedule;

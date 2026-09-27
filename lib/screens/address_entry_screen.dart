@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api_error_copy.dart';
 import '../core/theme.dart';
 import '../models/address_input.dart';
 import '../models/address_lookup.dart';
+import '../models/lookup.dart';
 import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
 import 'schedule_screen.dart';
@@ -94,8 +97,16 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
               if (provider.error != null) ...[
                 const SizedBox(height: 16),
                 _LookupErrorCard(
-                  detail: provider.error!.detail ??
-                      'We could not find your bin days.',
+                  detail: _errorDetail(provider),
+                  retryCopy: apiRetryAfterCopy(provider.error!.retryAfter),
+                  councilUrl: provider.failedLookup?.council?.lookupUrl,
+                  candidates: _offeredAddresses(provider),
+                  offerNeighbour:
+                      _canOfferNeighbour(provider.failedLookup, lookup),
+                  onOpenCouncil: _openCouncil,
+                  onPickCandidate: (candidate) =>
+                      _pickCandidate(candidate, lookup),
+                  onUseNeighbour: () => _useNeighbour(lookup),
                   onStartOver: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -306,6 +317,85 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
     return null;
   }
 
+  /// What went wrong, in the user's terms.
+  ///
+  /// A failed lookup carries its own `detail`; anything else (a refused
+  /// request, a dropped connection) goes through [apiErrorCopy] so the API's
+  /// own accounting never reaches the user.
+  String _errorDetail(LookupProvider provider) {
+    final detail = provider.failedLookup?.detail;
+    if (detail != null && detail.isNotEmpty) return detail;
+    return apiErrorCopy(provider.error!);
+  }
+
+  /// The addresses the council offered instead, and only for a failure that
+  /// names the address as the problem: an unrelated failure must never suggest
+  /// that a different address is the answer.
+  List<AddressCandidate> _offeredAddresses(LookupProvider provider) {
+    final failed = provider.failedLookup;
+    if (failed?.problem != 'address_not_found') return const [];
+    return failed!.candidates;
+  }
+
+  /// Whether the user may be offered a neighbour's dates.
+  ///
+  /// Consent is the whole point: only an `opt_in` council may be answered for
+  /// on the user's behalf, and only after an address it could not find. An
+  /// `automatic` council needs no consent, and an `unavailable` one has
+  /// nothing to offer.
+  bool _canOfferNeighbour(Lookup? failed, AddressLookup lookup) =>
+      failed?.problem == 'address_not_found' &&
+      lookup.postcodeRepresentative == 'opt_in';
+
+  Future<void> _openCouncil(String url) async {
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  /// Submit an address the council itself offered, so a failed lookup is not a
+  /// reason to retype everything.
+  Future<void> _pickCandidate(
+    AddressCandidate candidate,
+    AddressLookup lookup,
+  ) async {
+    final provider = context.read<LookupProvider>();
+    await provider.selectAddress(candidate, postcode: lookup.postcode);
+    if (!mounted) return;
+    final schedule = provider.schedule;
+    if (schedule == null) return;
+
+    // A provisional answer is a neighbour's dates served while the exact
+    // lookup finishes, so it is never kept as the user's own.
+    if (!schedule.provisional) {
+      final settings = context.read<SettingsProvider>();
+      await settings.saveAddress(
+        address: candidate.label,
+        postcode: lookup.postcode,
+        propertyId: candidate.id,
+      );
+      await settings.saveSchedule(schedule);
+    }
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+    );
+  }
+
+  /// Ask the council to answer for the nearest property to the postcode.
+  ///
+  /// This is the user's consent, given here, so the result is a neighbour's
+  /// dates: it is shown with its provisional label and never persisted.
+  Future<void> _useNeighbour(AddressLookup lookup) async {
+    final provider = context.read<LookupProvider>();
+    await provider.submitWithPostcodeRepresentative(
+      postcode: lookup.postcode,
+    );
+    if (!mounted) return;
+    if (provider.schedule == null) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const ScheduleScreen()),
+    );
+  }
+
   Future<void> _submit(AddressLookup lookup, AddressInputSpec spec) async {
     final property = _propertyController.text;
     final street = resolvedChoice(
@@ -353,17 +443,24 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
     if (schedule == null) return;
 
     final settings = context.read<SettingsProvider>();
-    await settings.saveAddress(
-      address: describeAddress(
+    // A provisional answer is the same postcode's NEIGHBOUR served while the
+    // exact lookup is still running: its property id names that neighbour, so
+    // saving either the address or the schedule would attach the user to
+    // somebody else's bin days. It is shown, with its label and the pending
+    // lookup behind it, and nothing is kept.
+    if (!schedule.provisional) {
+      await settings.saveAddress(
+        address: describeAddress(
+          postcode: lookup.postcode,
+          property: property,
+          street: street,
+          locality: locality,
+        ),
         postcode: lookup.postcode,
-        property: property,
-        street: street,
-        locality: locality,
-      ),
-      postcode: lookup.postcode,
-      propertyId: schedule.propertyId,
-    );
-    await settings.saveSchedule(schedule);
+        propertyId: schedule.propertyId,
+      );
+      await settings.saveSchedule(schedule);
+    }
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const ScheduleScreen()),
@@ -434,14 +531,49 @@ class _ChoiceTile extends StatelessWidget {
   }
 }
 
+/// What went wrong and every honest way forward.
+///
+/// A failed lookup is not just a message: the council may have offered the
+/// addresses it does know, and it may let the user consent to dates from a
+/// nearby property. The council's own page comes first, because checking by
+/// hand is the one thing that always works.
 class _LookupErrorCard extends StatelessWidget {
-  const _LookupErrorCard({required this.detail, required this.onStartOver});
+  const _LookupErrorCard({
+    required this.detail,
+    required this.candidates,
+    required this.offerNeighbour,
+    required this.onOpenCouncil,
+    required this.onPickCandidate,
+    required this.onUseNeighbour,
+    required this.onStartOver,
+    this.retryCopy,
+    this.councilUrl,
+  });
 
   final String detail;
+
+  /// The countdown after a rate-limited answer, when the server gave one.
+  final String? retryCopy;
+
+  /// The council's own lookup page, when it has one.
+  final String? councilUrl;
+
+  /// The addresses the council offered instead, empty unless the failure says
+  /// the address was the problem.
+  final List<AddressCandidate> candidates;
+
+  /// Whether the user may consent to dates from a nearby property.
+  final bool offerNeighbour;
+
+  final ValueChanged<String> onOpenCouncil;
+  final ValueChanged<AddressCandidate> onPickCandidate;
+  final VoidCallback onUseNeighbour;
   final VoidCallback onStartOver;
 
   @override
   Widget build(BuildContext context) {
+    final url = councilUrl;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
@@ -452,6 +584,41 @@ class _LookupErrorCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(detail, style: const TextStyle(fontSize: 16)),
+          if (retryCopy != null) ...[
+            const SizedBox(height: 8),
+            Text(retryCopy!, style: const TextStyle(fontSize: 16)),
+          ],
+          if (url != null) ...[
+            TextButton(
+              onPressed: () => onOpenCouncil(url),
+              child: const Text("Check on your council's site"),
+            ),
+          ],
+          if (candidates.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const _FieldTitle('Did you mean one of these?'),
+            for (final candidate in candidates)
+              _ChoiceTile(
+                label: candidate.label,
+                icon: Icons.home_outlined,
+                selected: false,
+                onTap: () => onPickCandidate(candidate),
+              ),
+          ],
+          if (offerNeighbour) ...[
+            const SizedBox(height: 8),
+            const _FieldTitle('Use dates from a nearby property instead?'),
+            const Text(
+              'Your council cannot find that exact address, so it can answer '
+              'for the nearest property on your postcode instead. The dates '
+              'may not be yours.',
+              style: TextStyle(fontSize: 16),
+            ),
+            TextButton(
+              onPressed: onUseNeighbour,
+              child: const Text('Use a nearby property'),
+            ),
+          ],
           const SizedBox(height: 8),
           TextButton(
             onPressed: onStartOver,

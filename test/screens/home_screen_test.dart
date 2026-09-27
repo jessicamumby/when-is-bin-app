@@ -10,6 +10,7 @@ import 'package:when_is_bin_app/models/address_lookup.dart';
 import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/home_screen.dart';
+import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import '../fakes/fake_api.dart';
 
@@ -301,6 +302,65 @@ void main() {
     expect(find.text('Enter a valid UK postcode, for example CB4 2HX.'),
         findsNothing);
     expect(api.addressCallCount, 1);
+  });
+
+  group('rate limited', () {
+    testWidgets('reads as a busy service, never as the API allowance',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 429,
+          problem: 'rate_limited',
+          detail: 'Network address allowance exceeded for wait token.',
+        );
+
+      await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+      await submitPostcode(tester, 'CB4 2HX');
+
+      expect(
+        find.text(
+          'Lots of people are checking bin days right now. '
+          'Try again in a minute.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('allowance'), findsNothing,
+          reason: 'the API token wording must never reach the user');
+      expect(find.textContaining('Network address'), findsNothing);
+    });
+
+    testWidgets('shows the Retry-After as a countdown', (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 429,
+          problem: 'rate_limited',
+          detail: 'Slow down.',
+          retryAfter: Duration(seconds: 5),
+        );
+
+      await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+      await submitPostcode(tester, 'CB4 2HX');
+
+      expect(find.text('Try again in about 5 seconds'), findsOneWidget);
+    });
+
+    testWidgets('shows no countdown when the API gave no Retry-After',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 429,
+          problem: 'rate_limited',
+          detail: 'Slow down.',
+        );
+
+      await tester.pumpWidget(buildApp(settings, LookupProvider(api: api)));
+      await submitPostcode(tester, 'CB4 2HX');
+
+      expect(find.textContaining('Try again in about'), findsNothing);
+    });
   });
 
   group('dark mode', () {

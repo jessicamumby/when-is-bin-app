@@ -29,6 +29,9 @@ class Lookup {
     this.result,
     this.progress,
     this.detail,
+    this.problem,
+    this.candidates = const [],
+    this.queueAhead,
   });
 
   final String id;
@@ -41,6 +44,16 @@ class Lookup {
   final Schedule? result;
   final LookupProgress? progress;
   final String? detail;
+
+  /// The machine-readable reason a lookup failed, e.g. `address_not_found`.
+  final String? problem;
+
+  /// Addresses the council offered instead, on a failed `address_not_found`.
+  /// Empty when the failure is not an address problem.
+  final List<AddressCandidate> candidates;
+
+  /// How many lookups the server had ahead of this one when it was queued.
+  final int? queueAhead;
 
   static const _pendingStatuses = {'queued', 'running', 'partial'};
 
@@ -65,6 +78,11 @@ class Lookup {
           ? null
           : LookupProgress.fromJson(json['progress'] as Map<String, dynamic>),
       detail: json['detail'] as String?,
+      problem: json['problem'] as String?,
+      candidates: (json['candidates'] as List<dynamic>? ?? const [])
+          .map((e) => AddressCandidate.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      queueAhead: json['queue_ahead'] as int?,
     );
   }
 }

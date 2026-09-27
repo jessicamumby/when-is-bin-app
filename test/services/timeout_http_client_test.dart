@@ -32,6 +32,17 @@ class _RecordingClient extends http.BaseClient {
 
 void main() {
   group('TimeoutHttpClient', () {
+    test('defaults to a loose 60 second backstop', () {
+      final inner = MockClient(
+        (request) async => http.Response('{}', 200),
+      );
+      final client = TimeoutHttpClient(inner);
+
+      // A loose backstop only: the API client owns the real per-endpoint
+      // deadlines (/wait runs for ~25s, so 15s here would cut it off).
+      expect(client.timeout, const Duration(seconds: 60));
+    });
+
     test('gives every request a deadline', () async {
       final client = TimeoutHttpClient(
         _HangingClient(),

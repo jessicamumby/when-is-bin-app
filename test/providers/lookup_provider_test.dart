@@ -344,7 +344,7 @@ void main() {
       expect(provider.isLoading, isFalse);
     });
 
-    test('surfaces an ApiException raised by the wait endpoint', () async {
+    test('surfaces an ApiException raised by createLookup', () async {
       final api = FakeWhenIsBinsApi()
         ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
         ..error = const ApiException(
@@ -357,7 +357,112 @@ void main() {
       await select(provider);
 
       expect(provider.error?.problem, 'rate_limited');
+      expect(provider.pendingLookupId, isNull,
+          reason: 'no lookup was ever created, so there is none to keep');
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('pauses for the Retry-After on a mid-poll 429 and reconnects',
+        () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        // The second answer repeats: the third wait reconnects and is done.
+        ..waitResponses = [
+          Lookup(id: 'lookup-1', status: 'running'),
+          Lookup(id: 'lookup-1', status: 'done', result: pollSchedule()),
+        ]
+        ..cursors = ['cur-1']
+        // Many phones share one IPv4 address on a mobile network, so the
+        // user's fifth open wait can be rate limited through no fault of
+        // their own: the first wait answers, the second is throttled.
+        ..waitErrors = [
+          null,
+          const ApiException(
+            statusCode: 429,
+            problem: 'rate_limited',
+            detail: 'Slow down.',
+            retryAfter: Duration(seconds: 2),
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(provider.error, isNull,
+          reason: 'a rate limit is the server problem, not the user one');
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
       expect(provider.pendingLookupId, isNull);
+      expect(api.waitCallCount, 3, reason: 'the wait is retried, not abandoned');
+      expect(api.afterCalls, [null, 'cur-1', 'cur-1'],
+          reason: 'the retry follows the same cursor as the failed wait');
+      expect(api.createLookupCalls, 1,
+          reason: 'a rate limit must never resubmit the lookup');
+      expect(slept, [
+        LookupProvider.defaultReconnectDelay,
+        const Duration(seconds: 2),
+      ], reason: 'the ordinary backoff, then the wait the server asked for');
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('a 429 without a Retry-After still surfaces as an error', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'running')]
+        ..waitErrors = [
+          const ApiException(
+            statusCode: 429,
+            problem: 'rate_limited',
+            detail: 'Slow down.',
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(provider.error?.problem, 'rate_limited',
+          reason: 'with no wait to honour there is nothing to retry with');
+      expect(slept, isEmpty);
+    });
+
+    test('never sleeps past the wait budget for a long Retry-After', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitErrors = [
+          const ApiException(
+            statusCode: 429,
+            problem: 'rate_limited',
+            detail: 'Slow down.',
+            retryAfter: Duration(minutes: 5),
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(slept, [const Duration(minutes: 2)]);
+      expect(api.waitCallCount, 1,
+          reason: 'there was no budget left for another request');
+      expect(provider.error, isNull);
+      expect(provider.pendingLookupId, 'lookup-1',
+          reason: 'the lookup is still running and kept for a later check');
+    });
+
+    test('keeps the pending lookup id when the wait itself fails', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [Lookup(id: 'lookup-1', status: 'queued')]
+        ..waitErrors = [
+          const ApiException(
+            statusCode: 0,
+            problem: 'timeout',
+            detail: 'The server took too long to respond. Please try again.',
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await select(provider);
+
+      expect(provider.error?.problem, 'timeout');
+      expect(provider.pendingLookupId, 'lookup-1',
+          reason: 'the lookup was created: a later check must not resubmit it');
       expect(provider.isLoading, isFalse);
     });
   });
@@ -624,6 +729,238 @@ void main() {
 
       expect(api.addressQueries, isEmpty);
       expect(provider.isLoading, isFalse);
+    });
+  });
+
+
+  group('LookupProvider.failedLookup', () {
+    /// A council that offered to answer for a neighbouring property.
+    const failedLookup = Lookup(
+      id: 'lookup-1',
+      status: 'failed',
+      problem: 'address_not_found',
+      detail: 'No exact address match.',
+      council: Council(
+        id: 'cambridge',
+        name: 'Cambridge City Council',
+        lookupUrl: 'https://www.cambridge.gov.uk/bins',
+      ),
+      candidates: [AddressCandidate(id: 'p:1', label: '15 Example Court')],
+    );
+
+    test('exposes the failed lookup with its problem, candidates and link',
+        () async {
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedLookup];
+      final provider = LookupProvider(api: api);
+
+      await provider.submitLookup(
+        postcode: 'CB4 2HX',
+        address: const {'property': '15 Example Court'},
+      );
+
+      expect(provider.failedLookup, isNotNull,
+          reason: 'the UI needs the council link and the alternatives');
+      expect(provider.failedLookup?.problem, 'address_not_found',
+          reason: 'the real reason must survive, not just lookup_failed');
+      expect(provider.failedLookup?.candidates.single.id, 'p:1');
+      expect(provider.failedLookup?.candidates.single.label,
+          '15 Example Court');
+      expect(provider.failedLookup?.council?.lookupUrl,
+          'https://www.cambridge.gov.uk/bins');
+      expect(provider.failedLookup?.detail, 'No exact address match.');
+      expect(provider.error?.problem, 'lookup_failed',
+          reason: 'the summary the UI already reads is unchanged');
+      expect(provider.schedule, isNull);
+    });
+
+    test('clears the failed lookup when a later lookup settles', () async {
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedLookup];
+      final provider = LookupProvider(api: api);
+      await provider.submitLookup(
+        postcode: 'CB4 2HX',
+        address: const {'property': '15 Example Court'},
+      );
+      expect(provider.failedLookup, isNotNull);
+
+      api.lookupResponses = [
+        Lookup(
+          id: 'lookup-2',
+          status: 'done',
+          result: Schedule(
+            propertyId: 'p:4c5ee6c2f2c7c959',
+            addressMatch: 'postcode_representative',
+            collections: const [
+              Collection(
+                name: 'Black bin',
+                wasteType: 'refuse',
+                dates: ['2026-09-10'],
+              ),
+            ],
+          ),
+        ),
+      ];
+
+      await provider.submitLookup(
+        postcode: 'CB4 2HX',
+        address: const {'property': '15 Example Court'},
+      );
+
+      expect(provider.failedLookup, isNull,
+          reason: 'a stale failure must not shadow a fresh schedule');
+      expect(provider.schedule?.addressMatch, 'postcode_representative');
+    });
+  });
+
+  group('LookupProvider.submitWithPostcodeRepresentative', () {
+    Schedule neighbourSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'postcode_representative',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+      );
+    }
+
+    test('resubmits the same address with consent and a fresh key', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'failed',
+            problem: 'address_not_found',
+            detail: 'No exact address match.',
+          ),
+        ];
+      final provider = LookupProvider(api: api);
+      await provider.submitLookup(
+        postcode: 'EH14 7AL',
+        address: const {'street': 'A70--Glenbrook Rd To B7031'},
+      );
+      final firstKey = api.lastIdempotencyKey;
+
+      api.lookupResponses = [
+        Lookup(id: 'lookup-2', status: 'done', result: neighbourSchedule()),
+      ];
+      await provider.submitWithPostcodeRepresentative(postcode: 'EH14 7AL');
+
+      expect(api.lastLookupBody, {
+        'postcode': 'EH14 7AL',
+        'street': 'A70--Glenbrook Rd To B7031',
+        'allow_postcode_representative': true,
+      }, reason: 'the same address, plus the consent the user gave');
+      expect(api.createLookupCalls, 2);
+      expect(api.lastIdempotencyKey, isNot(firstKey),
+          reason: 'a resubmit is new work, so it needs its own key');
+      expect(provider.schedule?.addressMatch, 'postcode_representative');
+      expect(provider.error, isNull);
+      expect(provider.failedLookup, isNull);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('does nothing when no address has been submitted', () async {
+      final api = FakeWhenIsBinsApi();
+      final provider = LookupProvider(api: api);
+
+      await provider.submitWithPostcodeRepresentative(postcode: 'EH14 7AL');
+
+      expect(api.createLookupCalls, 0);
+      expect(api.waitCallCount, 0);
+      expect(provider.isLoading, isFalse);
+    });
+  });
+
+  group('LookupProvider.activeLookup', () {
+    late DateTime now;
+
+    LookupProvider buildProvider(FakeWhenIsBinsApi api) {
+      now = DateTime(2026, 9, 23, 12);
+      return LookupProvider(
+        api: api,
+        delay: (duration) async => now = now.add(duration),
+        now: () => now,
+      );
+    }
+
+    Schedule settledSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'exact',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+      );
+    }
+
+    test('has nothing in flight before anything is submitted', () {
+      final provider = buildProvider(FakeWhenIsBinsApi());
+
+      expect(provider.activeLookup, isNull);
+    });
+
+    test('exposes the in-flight lookup as the poll advances', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'queued',
+            expectedWaitSeconds: 60,
+          ),
+        ]
+        ..waitResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'running',
+            expectedWaitSeconds: 45,
+            queueAhead: 3,
+            progress: LookupProgress(
+              stage: 'council',
+              message: 'Asking your council for your dates',
+            ),
+          ),
+          Lookup(id: 'lookup-1', status: 'done', result: settledSchedule()),
+        ];
+      final provider = buildProvider(api);
+      final seen = <int?>[];
+      provider.addListener(
+        () => seen.add(provider.activeLookup?.expectedWaitSeconds),
+      );
+
+      await provider.selectAddress(_candidate, postcode: 'CB4 2HX');
+
+      expect(seen, contains(60),
+          reason: 'the lookup as created is what the wait starts from');
+      expect(seen, contains(45),
+          reason: 'each answer from /wait updates the figure on screen');
+      expect(provider.activeLookup, isNull,
+          reason: 'nothing is in flight once the lookup settles');
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+    });
+
+    test('clears the in-flight lookup when it fails', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'failed',
+            problem: 'address_not_found',
+            detail: 'No exact address match.',
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await provider.selectAddress(_candidate, postcode: 'CB4 2HX');
+
+      expect(provider.failedLookup, isNotNull);
+      expect(provider.activeLookup, isNull);
     });
   });
 }

@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -42,6 +44,45 @@ class _PendingLookupApi extends FakeWhenIsBinsApi {
   }
 }
 
+/// A fake whose lookup is created straight away but whose wait never answers,
+/// so the loading state can be inspected with the council's own figures in
+/// hand.
+class _SlowPollApi extends FakeWhenIsBinsApi {
+  _SlowPollApi({
+    this.expectedWaitSeconds,
+    this.progressMessage,
+    this.queueAhead,
+  });
+
+  final int? expectedWaitSeconds;
+  final String? progressMessage;
+  final int? queueAhead;
+  final _wait = Completer<LookupWait>();
+
+  @override
+  Future<Lookup> createLookup(
+    Map<String, dynamic> body, {
+    required String idempotencyKey,
+  }) async {
+    createLookupCalls++;
+    lookupBodies.add(body);
+    return Lookup(
+      id: 'lookup-1',
+      status: 'queued',
+      expectedWaitSeconds: expectedWaitSeconds,
+      queueAhead: queueAhead,
+      progress: progressMessage == null
+          ? null
+          : LookupProgress(stage: 'council', message: progressMessage),
+    );
+  }
+
+  @override
+  Future<LookupWait> waitForLookup(String lookupId, {String? after}) {
+    return _wait.future;
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -56,6 +97,8 @@ void main() {
     bool provisional = false,
     String? dateConfidence,
     String? dateCompleteness,
+    String? notes,
+    String? calendarUrl,
   }) {
     return Schedule(
       propertyId: 'p:4c5ee6c2f2c7c959',
@@ -63,6 +106,8 @@ void main() {
       provisional: provisional,
       dateConfidence: dateConfidence,
       dateCompleteness: dateCompleteness,
+      notes: notes,
+      calendarUrl: calendarUrl,
       collections: [
         Collection(
           name: 'Black bin',
@@ -334,6 +379,115 @@ void main() {
     expect(find.text(nextCollectionLabel), findsOneWidget);
   });
 
+  group('the loading state', () {
+    /// Opens the schedule screen while [lookup] is still in flight.
+    Future<void> openWhileLoading(
+      WidgetTester tester,
+      SettingsProvider settings,
+      LookupProvider lookup,
+    ) async {
+      await tester.pumpWidget(buildHostedSchedule(settings, lookup));
+      await tester.tap(find.text('Open your bin days'));
+      // Not pumpAndSettle: the spinner never stops, so the route transition is
+      // pumped by hand.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    testWidgets('says how long this council usually takes', (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi(
+        expectedWaitSeconds: 60,
+        progressMessage: 'Asking your council for your dates',
+        queueAhead: 3,
+      );
+      final lookup = LookupProvider(api: api);
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.textContaining('Finding your bin days'), findsOneWidget);
+      expect(find.text('Usually about a minute for this council'),
+          findsOneWidget);
+      expect(find.text('Asking your council for your dates'), findsOneWidget);
+      expect(find.text('there are 3 other lookups ahead'), findsOneWidget);
+    });
+
+    testWidgets('says the wait in seconds when it is not a whole minute',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi(expectedWaitSeconds: 45);
+      final lookup = LookupProvider(api: api);
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.text('Usually about 45 seconds for this council'),
+          findsOneWidget);
+    });
+
+    testWidgets('falls back to the council the address lookup named',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi()
+        ..addressLookup = const AddressLookup(
+          postcode: 'CB4 2HX',
+          requiredInput: 'none',
+          council: Council(
+            id: 'E07000008',
+            name: 'Cambridge City Council',
+            expectedWaitSeconds: 30,
+          ),
+        );
+      final lookup = LookupProvider(api: api);
+      await lookup.lookupPostcode('CB4 2HX');
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.text('Usually about 30 seconds for this council'),
+          findsOneWidget);
+    });
+
+    testWidgets('says nothing it cannot back up', (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi();
+      final lookup = LookupProvider(api: api);
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.textContaining('Usually about'), findsNothing);
+      expect(find.textContaining('other lookups ahead'), findsNothing);
+    });
+  });
+
+  group('councilWaitCopy', () {
+    test('a whole minute reads as a minute', () {
+      expect(
+        councilWaitCopy(60),
+        'Usually about a minute for this council',
+      );
+    });
+
+    test('anything else is the seconds it is', () {
+      expect(
+        councilWaitCopy(45),
+        'Usually about 45 seconds for this council',
+      );
+      expect(
+        councilWaitCopy(120),
+        'Usually about 120 seconds for this council',
+      );
+    });
+
+    test('says nothing when there is no honest figure', () {
+      expect(councilWaitCopy(null), isNull);
+      expect(councilWaitCopy(0), isNull);
+      expect(councilWaitCopy(-5), isNull);
+    });
+  });
+
   testWidgets('shows a friendly error with a retry when the lookup failed',
       (tester) async {
     final settings = await makeSettings();
@@ -397,6 +551,135 @@ void main() {
     expect(find.text('We could not load your bin days.'), findsOneWidget);
     expect(find.text('Try again'), findsNothing);
     expect(find.text('Search for your postcode'), findsOneWidget);
+  });
+
+  testWidgets('shows the council caveats as a muted line', (tester) async {
+    final settings = await makeSettings();
+    const notes = 'Assisted collections move back a day after a bank holiday.';
+    final note = find.text(notes);
+
+    await tester.pumpWidget(
+      buildScheduleApp(settings, schedule(notes: notes), theme: AppTheme.light),
+    );
+
+    expect(note, findsOneWidget);
+    expect(textColour(tester, note), AppColors.muted,
+        reason: 'a caveat is secondary to the dates it qualifies');
+    // The caveat sits with the address it applies to, above the next date.
+    expect(
+      tester.getTopLeft(note).dy,
+      lessThan(tester.getTopLeft(find.text('Put out: Black bin')).dy),
+    );
+  });
+
+  testWidgets('shows no caveat line when the council published none',
+      (tester) async {
+    final settings = await makeSettings();
+
+    await tester.pumpWidget(buildScheduleApp(settings, schedule()));
+
+    expect(find.text(''), findsNothing,
+        reason: 'an empty caveat must not leave a blank line');
+  });
+
+  group('add to calendar', () {
+    const calendarUrl = 'https://whenisbins.com/100023336956.ics';
+
+    late List<String> launched;
+    late List<String> clipboard;
+
+    setUp(() {
+      launched = [];
+      clipboard = [];
+    });
+
+    /// Runs [body] with the platform the widgets see pinned to [platform].
+    ///
+    /// The override is cleared inside the test body: the framework checks its
+    /// debug variables at the end of the body, BEFORE addTearDown runs, so a
+    /// deferred reset fails every test that used it.
+    Future<void> onPlatform(
+      TargetPlatform platform,
+      Future<void> Function() body,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        await body();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
+
+    /// Captures what the app hands to the OS launcher. In a test the platform
+    /// implementation is the method-channel one, so this is the URL the device
+    /// would actually open.
+    void mockLaunch(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/url_launcher'),
+        (call) async {
+          if (call.method == 'launch') {
+            launched.add(call.arguments['url'] as String);
+          }
+          return true;
+        },
+      );
+    }
+
+    void mockClipboard(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboard.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+    }
+
+    Future<void> tapCalendarAction(WidgetTester tester, Finder action) async {
+      await tester.ensureVisible(action);
+      await tester.pump();
+      await tester.tap(action);
+      await tester.pump();
+    }
+
+    testWidgets('on iOS it opens the calendar subscribe sheet', (tester) async {
+      mockLaunch(tester);
+      final settings = await makeSettings();
+
+      await onPlatform(TargetPlatform.iOS, () async {
+        await tester.pumpWidget(
+          buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
+        );
+        await tapCalendarAction(tester, find.text('Open calendar feed'));
+
+        expect(launched, ['webcal://whenisbins.com/100023336956.ics'],
+            reason: 'webcal is what makes iOS offer to subscribe');
+      });
+    });
+
+    testWidgets('on Android it offers the link to copy instead',
+        (tester) async {
+      mockClipboard(tester);
+      final settings = await makeSettings();
+
+      await onPlatform(TargetPlatform.android, () async {
+        await tester.pumpWidget(
+          buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
+        );
+
+        final action = find.text('Copy calendar link');
+        expect(action, findsOneWidget);
+        expect(find.text('Paste it into your calendar app.'), findsOneWidget);
+        expect(find.text('Open calendar feed'), findsNothing,
+            reason: 'Android has no handler for a webcal or .ics URL');
+
+        await tapCalendarAction(tester, action);
+
+        expect(clipboard, [calendarUrl]);
+      });
+    });
   });
 
   group('scheduleDateCaveat', () {

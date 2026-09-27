@@ -314,6 +314,53 @@ void main() {
       expect(check.etag, '"v1-abc123"');
     });
 
+    test('strips a leading p: so the path is the bare property token', () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'property_id': 'p:4c5ee6c2f2c7c959',
+            'address_match': 'exact',
+            'collections': [],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final api = buildApi(client);
+      // `property_id` values (and so the id the app saves) keep the `p:`
+      // prefix; the schedules path wants the bare token, and the API used to
+      // answer a 301 for the prefixed form - a second request on every launch.
+      final check = await api.checkSchedule('p:4c5ee6c2f2c7c959');
+
+      expect(captured.url.path, '/v1/schedules/4c5ee6c2f2c7c959');
+      // Only the path is normalised: what comes back is untouched.
+      expect(check.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+    });
+
+    test('strips only one leading p:', () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'property_id': 'p:p:4c5ee6c2f2c7c959',
+            'address_match': 'exact',
+            'collections': [],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final api = buildApi(client);
+      await api.checkSchedule('p:p:4c5ee6c2f2c7c959');
+
+      expect(captured.url.path, '/v1/schedules/p:4c5ee6c2f2c7c959');
+    });
+
     test('sends If-None-Match when an etag is provided', () async {
       late http.Request captured;
       final client = MockClient((request) async {
@@ -547,6 +594,62 @@ void main() {
       expect(api.timeout, const Duration(seconds: 15));
     });
 
+    test('gives /wait its own, longer default deadline', () {
+      final api = buildApi(MockClient((request) async => http.Response('{}', 200)));
+
+      // The server holds /wait open for roughly 25s, so the 15s default would
+      // kill every long-poll before the server could answer.
+      expect(api.waitTimeout, const Duration(seconds: 40));
+      expect(WhenIsBinsApi.defaultWaitTimeout, const Duration(seconds: 40));
+    });
+
+    test('honours the longer wait deadline for a held /wait response', () async {
+      final client = MockClient((request) async {
+        // A long-poll the server legitimately holds open, well past the
+        // ordinary request deadline but inside the wait budget.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        return http.Response(
+          jsonEncode({'id': 'lookup-1', 'status': 'running'}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final api = WhenIsBinsApi(
+        client: client,
+        baseUrl: baseUrl,
+        timeout: const Duration(milliseconds: 100),
+        waitTimeout: const Duration(milliseconds: 400),
+      );
+
+      final wait = await api.waitForLookup('lookup-1');
+
+      expect(wait.lookup.status, 'running');
+    });
+
+    test('keeps the ordinary deadline on every other endpoint', () async {
+      final client = MockClient((request) async {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        return http.Response(
+          jsonEncode({'id': 'lookup-1', 'status': 'running'}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final api = WhenIsBinsApi(
+        client: client,
+        baseUrl: baseUrl,
+        timeout: const Duration(milliseconds: 100),
+        waitTimeout: const Duration(milliseconds: 400),
+      );
+
+      // Only /wait gets the longer budget: a snapshot must still fail fast.
+      await expectLater(
+        api.getLookup('lookup-1'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.problem, 'problem', 'timeout')),
+      );
+    });
+
     test('turns a hung request into an ApiException', () async {
       final api = buildApi(
         _HangingClient(),
@@ -572,6 +675,82 @@ void main() {
         () => api.getAddresses('CB4 2HX'),
         throwsA(isA<ApiException>()
             .having((e) => e.problem, 'problem', 'network')),
+      );
+    });
+  });
+
+  group('rate limiting', () {
+    test('carries no Retry-After when the server did not send one', () {
+      const exception = ApiException(statusCode: 429, problem: 'rate_limited');
+
+      expect(exception.retryAfter, isNull);
+    });
+
+    test('a 429 from getAddresses carries the server\'s Retry-After', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'problem': 'rate_limited',
+            'detail': 'Too many requests.',
+          }),
+          429,
+          headers: {
+            'content-type': 'application/json',
+            'Retry-After': '5',
+          },
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.getAddresses('CB4 2HX'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 429)
+            .having((e) => e.problem, 'problem', 'rate_limited')
+            .having((e) => e.retryAfter, 'retryAfter',
+                const Duration(seconds: 5))),
+      );
+    });
+
+    test('a 429 from waitForLookup carries the server\'s Retry-After', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'problem': 'rate_limited'}),
+          429,
+          headers: {'Retry-After': '5'},
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.waitForLookup('lookup-1'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 429)
+            .having((e) => e.problem, 'problem', 'rate_limited')
+            .having((e) => e.retryAfter, 'retryAfter',
+                const Duration(seconds: 5))),
+      );
+    });
+
+    test('a 429 without a Retry-After leaves the caller its own backoff',
+        () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'problem': 'rate_limited'}),
+          429,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.getAddresses('CB4 2HX'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 429)
+            .having((e) => e.retryAfter, 'retryAfter', isNull)),
       );
     });
   });

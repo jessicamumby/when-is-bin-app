@@ -9,6 +9,7 @@ import 'package:when_is_bin_app/models/schedule.dart';
 import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/address_entry_screen.dart';
+import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import '../fakes/fake_api.dart';
 
@@ -19,10 +20,11 @@ void main() {
   final nextCollection = DateTime.now().add(const Duration(days: 3));
   final nextCollectionIso = DateFormat('yyyy-MM-dd').format(nextCollection);
 
-  Schedule schedule() {
+  Schedule schedule({bool provisional = false}) {
     return Schedule(
       propertyId: 'p:4c5ee6c2f2c7c959',
-      addressMatch: 'exact',
+      addressMatch: provisional ? 'postcode_representative' : 'exact',
+      provisional: provisional,
       collections: [
         Collection(
           name: 'Black bin',
@@ -51,12 +53,34 @@ void main() {
     String requiredInput, {
     String postcode = 'EH14 7AL',
     InputOptions? inputOptions,
+    String? postcodeRepresentative,
   }) {
     return AddressLookup(
       postcode: postcode,
       requiredInput: requiredInput,
       council: const Council(id: 'S12000036', name: 'City of Edinburgh Council'),
       inputOptions: inputOptions,
+      postcodeRepresentative: postcodeRepresentative,
+    );
+  }
+
+  /// A lookup the council refused, with the two things the user can act on:
+  /// the addresses it did offer, and its own page to check by hand.
+  Lookup failedAddressLookup() {
+    return const Lookup(
+      id: 'lookup-1',
+      status: 'failed',
+      problem: 'address_not_found',
+      detail: 'We could not find that address at your council.',
+      council: Council(
+        id: 'S12000036',
+        name: 'City of Edinburgh Council',
+        lookupUrl: 'https://www.edinburgh.gov.uk/bins',
+      ),
+      candidates: [
+        AddressCandidate(id: 'p:9', label: '15 Example Court'),
+        AddressCandidate(id: 'p:10', label: '17 Example Court'),
+      ],
     );
   }
 
@@ -565,5 +589,249 @@ void main() {
 
     expect(find.text('A housing estate'), findsOneWidget);
     expect(find.text('Search for your street or area'), findsNothing);
+  });
+
+  testWidgets('a rate-limited submit reads as a busy service, with a countdown',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..error = const ApiException(
+        statusCode: 429,
+        problem: 'rate_limited',
+        detail: 'Network address allowance exceeded for wait token.',
+        retryAfter: Duration(seconds: 5),
+      );
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(
+      buildScreen(lookup, settings, lookupNeeding('property')),
+    );
+    await tester.enterText(find.byType(TextField), '15 Example Court');
+    await submitForm(tester);
+
+    expect(
+      find.text(
+        'Lots of people are checking bin days right now. '
+        'Try again in a minute.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Try again in about 5 seconds'), findsOneWidget);
+    expect(find.textContaining('allowance'), findsNothing,
+        reason: 'the API token wording must never reach the user');
+  });
+
+  testWidgets('a provisional answer is shown but nothing is saved from it',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..lookupResponses = [
+        Lookup(
+          id: 'lookup-1',
+          status: 'done',
+          result: schedule(provisional: true),
+        ),
+      ];
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(
+      buildScreen(lookup, settings, lookupNeeding('property')),
+    );
+    await tester.enterText(find.byType(TextField), '15 Example Court');
+    await submitForm(tester);
+
+    // The interim answer is shown, with its label...
+    expect(find.textContaining('your address is still being checked'),
+        findsOneWidget);
+    expect(find.text('Put out: Black bin'), findsOneWidget);
+    // ...but its property id names the neighbour, not the user, so neither the
+    // address nor the schedule may be kept.
+    expect(settings.savedAddress, isNull,
+        reason: 'the provisional property id names the neighbour, not the user');
+    expect(settings.savedPropertyId, isNull);
+    expect(settings.hasSavedSchedule, isFalse);
+  });
+
+  group('a failed lookup', () {
+    /// Submits a form that the council refuses with `address_not_found`.
+    Future<void> submitFailingLookup(
+      WidgetTester tester, {
+      required String? postcodeRepresentative,
+    }) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedAddressLookup()];
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildScreen(
+          lookup,
+          settings,
+          lookupNeeding(
+            'property',
+            postcodeRepresentative: postcodeRepresentative,
+          ),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '1 Nowhere Road');
+      await submitForm(tester);
+    }
+
+    /// Scrolls [target] into the viewport before tapping it: the error card
+    /// sits below the form, off the 600px test screen.
+    Future<void> tapInCard(WidgetTester tester, Finder target) async {
+      await tester.ensureVisible(target);
+      await tester.pump();
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('shows the detail, the council link and the offered addresses',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedAddressLookup()];
+
+      await tester.pumpWidget(
+        buildScreen(
+          LookupProvider(api: api),
+          settings,
+          lookupNeeding('property', postcodeRepresentative: 'automatic'),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '1 Nowhere Road');
+      await submitForm(tester);
+
+      expect(
+        find.text('We could not find that address at your council.'),
+        findsOneWidget,
+      );
+      expect(find.text("Check on your council's site"), findsOneWidget);
+      expect(find.text('Did you mean one of these?'), findsOneWidget);
+      expect(find.text('15 Example Court'), findsOneWidget);
+      expect(find.text('17 Example Court'), findsOneWidget);
+
+      // The council's own page is the way to check by hand, so it comes before
+      // any advice about starting over.
+      final link = tester.getTopLeft(find.text("Check on your council's site"));
+      final startOver = tester.getTopLeft(find.text('Try another postcode'));
+      expect(link.dy, lessThan(startOver.dy));
+    });
+
+    testWidgets('re-picks an offered address without starting over',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedAddressLookup()];
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildScreen(
+          lookup,
+          settings,
+          lookupNeeding('property', postcodeRepresentative: 'automatic'),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '1 Nowhere Road');
+      await submitForm(tester);
+      expect(api.createLookupCalls, 1);
+
+      api.lookupResponses = [
+        Lookup(id: 'lookup-2', status: 'done', result: schedule()),
+      ];
+      await tapInCard(tester, find.text('15 Example Court'));
+
+      expect(api.lastLookupBody, {
+        'postcode': 'EH14 7AL',
+        'property_id': 'p:9',
+      }, reason: 'the picked address is submitted, not retyped');
+      expect(settings.savedAddress, '15 Example Court');
+      expect(settings.hasSavedSchedule, isTrue);
+      expect(find.text('Put out: Black bin'), findsOneWidget);
+    });
+
+    testWidgets('offers neighbour dates on an opt-in council, after consent',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedAddressLookup()];
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildScreen(
+          lookup,
+          settings,
+          lookupNeeding('property', postcodeRepresentative: 'opt_in'),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '1 Nowhere Road');
+      await submitForm(tester);
+
+      expect(
+        find.text('Use dates from a nearby property instead?'),
+        findsOneWidget,
+      );
+      expect(api.createLookupCalls, 1,
+          reason: 'nothing is asked of a neighbour until the user consents');
+
+      api.lookupResponses = [
+        Lookup(id: 'lookup-2', status: 'done', result: schedule()),
+      ];
+      await tapInCard(tester, find.text('Use a nearby property'));
+
+      expect(api.lastLookupBody, {
+        'postcode': 'EH14 7AL',
+        'property': '1 Nowhere Road',
+        'allow_postcode_representative': true,
+      }, reason: 'the same address, plus the consent the user just gave');
+      expect(find.text('Put out: Black bin'), findsOneWidget);
+    });
+
+    testWidgets('does not offer neighbour dates on an automatic council',
+        (tester) async {
+      await submitFailingLookup(tester, postcodeRepresentative: 'automatic');
+
+      expect(
+        find.text('Use dates from a nearby property instead?'),
+        findsNothing,
+        reason: 'the API answers for the postcode itself, with no consent',
+      );
+    });
+
+    testWidgets('does not offer neighbour dates when the council has none',
+        (tester) async {
+      await submitFailingLookup(tester, postcodeRepresentative: null);
+
+      expect(find.text('Use dates from a nearby property instead?'),
+          findsNothing);
+    });
+
+    testWidgets('a provisional re-pick is shown but never saved',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedAddressLookup()];
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildScreen(
+          lookup,
+          settings,
+          lookupNeeding('property', postcodeRepresentative: 'automatic'),
+        ),
+      );
+      await tester.enterText(find.byType(TextField), '1 Nowhere Road');
+      await submitForm(tester);
+
+      api.lookupResponses = [
+        Lookup(
+          id: 'lookup-2',
+          status: 'done',
+          result: schedule(provisional: true),
+        ),
+      ];
+      await tapInCard(tester, find.text('15 Example Court'));
+
+      expect(find.textContaining('your address is still being checked'),
+          findsOneWidget);
+      expect(settings.savedAddress, isNull);
+      expect(settings.hasSavedSchedule, isFalse,
+          reason: 'a neighbour answer must never be saved');
+    });
   });
 }

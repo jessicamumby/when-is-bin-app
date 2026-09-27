@@ -31,6 +31,13 @@ class FakeWhenIsBinsApi implements WhenIsBinsApi {
   /// list is exhausted, so an "always still running" server is one entry.
   List<Lookup> waitResponses = [];
 
+  /// `ApiException`s to raise from `waitForLookup` instead of answering, by
+  /// call index: entry `n` fails the nth wait, a null entry answers normally,
+  /// and calls past the end answer normally. This is how a mid-poll 429 or a
+  /// dropped connection is simulated without the sticky [error] field (which
+  /// would fail `createLookup` first).
+  List<ApiException?> waitErrors = [];
+
   /// The `X-Lookup-Cursor` handed back on each wait call, and the `after`
   /// value each call was made with.
   List<String?> cursors = [];
@@ -60,6 +67,9 @@ class FakeWhenIsBinsApi implements WhenIsBinsApi {
 
   @override
   Duration get timeout => WhenIsBinsApi.defaultTimeout;
+
+  @override
+  Duration get waitTimeout => WhenIsBinsApi.defaultWaitTimeout;
 
   @override
   Future<AddressLookup> getAddresses(String postcode, {String? q}) async {
@@ -107,6 +117,8 @@ class FakeWhenIsBinsApi implements WhenIsBinsApi {
   Future<LookupWait> waitForLookup(String lookupId, {String? after}) async {
     afterCalls.add(after);
     final index = waitCallCount++;
+    final queued = index < waitErrors.length ? waitErrors[index] : null;
+    if (queued != null) throw queued;
     if (error != null) throw error!;
     return LookupWait(
       lookup: _waitAnswer(index, lookupId),
