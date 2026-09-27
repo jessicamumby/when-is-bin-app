@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../core/theme.dart';
 import '../models/address_lookup.dart';
@@ -102,11 +103,31 @@ class AddressSelectScreen extends StatelessWidget {
                         );
                       }
                     } else if (lookup.error != null) {
+                      final councilUrl =
+                          lookup.failedLookup?.council?.lookupUrl;
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text(
-                            lookup.error!.detail ??
-                                'We could not find your bin days.',
+                          content: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                lookup.error!.detail ??
+                                    'We could not find your bin days.',
+                              ),
+                              // The council's own page is where the user can
+                              // check by hand, so the failure offers it.
+                              if (councilUrl != null)
+                                TextButton(
+                                  onPressed: () => launchUrl(
+                                    Uri.parse(councilUrl),
+                                    mode: LaunchMode.externalApplication,
+                                  ),
+                                  child: const Text(
+                                    "Check on your council's site",
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       );

@@ -222,4 +222,36 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('a failed pick carries the council link in its message',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider(await SharedPreferences.getInstance());
+    final api = FakeWhenIsBinsApi()
+      ..lookupResponses = [
+        const Lookup(
+          id: 'lookup-1',
+          status: 'failed',
+          problem: 'address_not_found',
+          detail: "The council's system doesn't list that exact address.",
+          council: Council(
+            id: 'E07000008',
+            name: 'Cambridge City Council',
+            lookupUrl: 'https://www.cambridge.gov.uk/bins',
+          ),
+        ),
+      ];
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(buildApp(lookup, settings));
+    await tester.tap(find.text(candidate.label));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text("The council's system doesn't list that exact address."),
+      findsOneWidget,
+    );
+    expect(find.text("Check on your council's site"), findsOneWidget,
+        reason: 'the way to check by hand belongs with the failure');
+  });
 }
