@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -57,6 +59,7 @@ void main() {
     String? dateConfidence,
     String? dateCompleteness,
     String? notes,
+    String? calendarUrl,
   }) {
     return Schedule(
       propertyId: 'p:4c5ee6c2f2c7c959',
@@ -65,6 +68,7 @@ void main() {
       dateConfidence: dateConfidence,
       dateCompleteness: dateCompleteness,
       notes: notes,
+      calendarUrl: calendarUrl,
       collections: [
         Collection(
           name: 'Black bin',
@@ -428,6 +432,106 @@ void main() {
 
     expect(find.text(''), findsNothing,
         reason: 'an empty caveat must not leave a blank line');
+  });
+
+  group('add to calendar', () {
+    const calendarUrl = 'https://whenisbins.com/100023336956.ics';
+
+    late List<String> launched;
+    late List<String> clipboard;
+
+    setUp(() {
+      launched = [];
+      clipboard = [];
+    });
+
+    /// Runs [body] with the platform the widgets see pinned to [platform].
+    ///
+    /// The override is cleared inside the test body: the framework checks its
+    /// debug variables at the end of the body, BEFORE addTearDown runs, so a
+    /// deferred reset fails every test that used it.
+    Future<void> onPlatform(
+      TargetPlatform platform,
+      Future<void> Function() body,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        await body();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
+
+    /// Captures what the app hands to the OS launcher. In a test the platform
+    /// implementation is the method-channel one, so this is the URL the device
+    /// would actually open.
+    void mockLaunch(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/url_launcher'),
+        (call) async {
+          if (call.method == 'launch') {
+            launched.add(call.arguments['url'] as String);
+          }
+          return true;
+        },
+      );
+    }
+
+    void mockClipboard(WidgetTester tester) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            clipboard.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+    }
+
+    Future<void> tapCalendarAction(WidgetTester tester, Finder action) async {
+      await tester.ensureVisible(action);
+      await tester.pump();
+      await tester.tap(action);
+      await tester.pump();
+    }
+
+    testWidgets('on iOS it opens the calendar subscribe sheet', (tester) async {
+      mockLaunch(tester);
+      final settings = await makeSettings();
+
+      await onPlatform(TargetPlatform.iOS, () async {
+        await tester.pumpWidget(
+          buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
+        );
+        await tapCalendarAction(tester, find.text('Open calendar feed'));
+
+        expect(launched, ['webcal://whenisbins.com/100023336956.ics'],
+            reason: 'webcal is what makes iOS offer to subscribe');
+      });
+    });
+
+    testWidgets('on Android it offers the link to copy instead',
+        (tester) async {
+      mockClipboard(tester);
+      final settings = await makeSettings();
+
+      await onPlatform(TargetPlatform.android, () async {
+        await tester.pumpWidget(
+          buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
+        );
+
+        final action = find.text('Copy calendar link');
+        expect(action, findsOneWidget);
+        expect(find.text('Paste it into your calendar app.'), findsOneWidget);
+        expect(find.text('Open calendar feed'), findsNothing,
+            reason: 'Android has no handler for a webcal or .ics URL');
+
+        await tapCalendarAction(tester, action);
+
+        expect(clipboard, [calendarUrl]);
+      });
+    });
   });
 
   group('scheduleDateCaveat', () {

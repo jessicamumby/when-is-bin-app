@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -432,8 +434,21 @@ class _CalendarCard extends StatelessWidget {
 
   final String calendarUrl;
 
+  /// iOS hands a `webcal://` URL to Calendar, which offers to subscribe to it.
+  /// Android has no handler for that scheme (or for a `.ics` file), so there
+  /// the user is given the link to paste into their own calendar app.
+  bool get _subscribesInCalendar =>
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// The URL that makes iOS open its Calendar subscribe sheet.
+  String get _subscribeUrl => calendarUrl.startsWith('https://')
+      ? 'webcal://${calendarUrl.substring('https://'.length)}'
+      : calendarUrl;
+
   @override
   Widget build(BuildContext context) {
+    final muted = AppColors.mutedFor(Theme.of(context).brightness);
+
     return _InsetCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -445,20 +460,31 @@ class _CalendarCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Subscribe to your bin collection calendar feed.',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.mutedFor(Theme.of(context).brightness),
-            ),
+            style: TextStyle(fontSize: 16, color: muted),
           ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => launchUrl(
-              Uri.parse(calendarUrl),
-              mode: LaunchMode.externalApplication,
+          if (_subscribesInCalendar)
+            OutlinedButton.icon(
+              onPressed: () => launchUrl(
+                Uri.parse(_subscribeUrl),
+                mode: LaunchMode.externalApplication,
+              ),
+              icon: const Icon(Icons.calendar_today_outlined),
+              label: const Text('Open calendar feed'),
+            )
+          else ...[
+            OutlinedButton.icon(
+              onPressed: () =>
+                  Clipboard.setData(ClipboardData(text: calendarUrl)),
+              icon: const Icon(Icons.link_outlined),
+              label: const Text('Copy calendar link'),
             ),
-            icon: const Icon(Icons.calendar_today_outlined),
-            label: const Text('Open calendar feed'),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              'Paste it into your calendar app.',
+              style: TextStyle(fontSize: 16, color: muted),
+            ),
+          ],
         ],
       ),
     );
