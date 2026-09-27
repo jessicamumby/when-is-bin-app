@@ -52,24 +52,27 @@ void main() {
       expect(find.textContaining('All of it built by LLMs'), findsOneWidget);
     });
 
-    testWidgets('names the operator and the limits of the service',
+    testWidgets('names the developer and the service the data comes from',
         (tester) async {
       await pumpAbout(tester);
 
       expect(
+        find.textContaining('an independent app by Jessica Mumby'),
+        findsOneWidget,
+      );
+      expect(
         find.textContaining(
-          'a free, independent demonstrator operated and funded by Public '
-          'Digital Limited',
+          'It reads bin collection dates from the WhenIsBins API, a free '
+          'service operated by Public Digital',
         ),
         findsOneWidget,
       );
       expect(
-        find.textContaining('Coverage and the dates available vary'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('hello@whenisbins.com'), findsOneWidget);
-      expect(
-        find.textContaining('Your council handles missed collections'),
+        find.textContaining(
+          'Questions about this app go to Jessica Mumby; corrections, '
+          'accessibility and privacy questions about the data go to '
+          'hello@whenisbins.com',
+        ),
         findsOneWidget,
       );
     });

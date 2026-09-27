@@ -2,7 +2,9 @@
 
 Find your UK bin collection days and get a reminder the night before.
 
-A Flutter app for Android and iOS that recreates the [whenisbins.com](https://whenisbins.com/) experience: enter your postcode, pick your address, see which bins go out and when, and get a local notification the evening (or morning) before each collection.
+**When Is Bin App is an independent app by Jessica Mumby.** It reads bin collection dates from the **WhenIsBins API, a free service operated by Public Digital**. Questions about this app go to Jessica Mumby; corrections, accessibility and privacy questions about the data go to `hello@whenisbins.com`.
+
+A Flutter app for Android and iOS that brings the [whenisbins.com](https://whenisbins.com/) experience to your phone: enter your postcode, pick your address, see which bins go out and when, and get a local notification the evening (or morning) before each collection.
 
 ## Features
 
@@ -79,3 +81,10 @@ Two rules when regenerating:
 ## CI
 
 GitHub Actions runs `flutter analyze` and `flutter test` on every push and PR (see `.github/workflows/ci.yml`).
+
+## Built by
+
+When Is Bin App is an independent app written and maintained by **Jessica Mumby**. It is not a Public Digital product: it is a client of the WhenIsBins API, a free service operated by **Public Digital**, which supplies the bin collection dates.
+
+- App questions, bugs and feature requests — Jessica Mumby (the developer of this app).
+- Data corrections, accessibility and privacy questions about the collection dates — `hello@whenisbins.com`.
