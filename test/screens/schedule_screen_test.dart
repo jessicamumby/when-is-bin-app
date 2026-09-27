@@ -488,6 +488,41 @@ void main() {
     });
   });
 
+  group('cleanScheduleNotes', () {
+    test('drops a bracketed source annotation', () {
+      expect(
+        cleanScheduleNotes(
+          'Parsed from the South Kesteven self-service form (renderform '
+          't=213), which lists collections week-by-week.',
+        ),
+        'Parsed from the South Kesteven self-service form, which lists '
+        'collections week-by-week.',
+      );
+    });
+
+    test('drops every bracketed token, collapsing the gap', () {
+      expect(
+        cleanScheduleNotes(
+          'Communal bins (see website) (shared) are collected together.',
+        ),
+        'Communal bins are collected together.',
+      );
+    });
+
+    test('leaves a note without brackets alone', () {
+      expect(
+        cleanScheduleNotes('Bank holidays shift collections by a day.'),
+        'Bank holidays shift collections by a day.',
+      );
+    });
+
+    test('returns null when there is nothing left to say', () {
+      expect(cleanScheduleNotes(null), isNull);
+      expect(cleanScheduleNotes('(renderform t=213)'), isNull);
+      expect(cleanScheduleNotes('   '), isNull);
+    });
+  });
+
   testWidgets('shows a friendly error with a retry when the lookup failed',
       (tester) async {
     final settings = await makeSettings();
@@ -607,6 +642,27 @@ void main() {
 
     expect(find.text(''), findsNothing,
         reason: 'an empty caveat must not leave a blank line');
+  });
+
+  testWidgets('hides the API source annotation from the notes',
+      (tester) async {
+    final settings = await makeSettings();
+    const notes =
+        'Parsed from the South Kesteven self-service form (renderform t=213), '
+        'which lists collections week-by-week.';
+
+    await tester.pumpWidget(
+      buildScheduleApp(settings, schedule(notes: notes), theme: AppTheme.light),
+    );
+
+    expect(find.textContaining('renderform'), findsNothing);
+    expect(
+      find.text(
+        'Parsed from the South Kesteven self-service form, which lists '
+        'collections week-by-week.',
+      ),
+      findsOneWidget,
+    );
   });
 
   group('add to calendar', () {
