@@ -19,10 +19,10 @@ const String aiAgentsUrl =
     'https://loosemore.com/2026/02/25/ai-agents-will-join-up-government-'
     'before-government-does/';
 
-/// A short About: what the app does, who operates it, and what the
-/// demonstrator is really for. Mirrors the wording of the service it reads
-/// from, so an answer given in the app can be checked against the same
-/// explanation on the website.
+/// A short About: what the app does, who writes it, and what the bin day
+/// service is really for. Mirrors the wording of the service it reads from, so
+/// an answer given in the app can be checked against the same explanation on
+/// the website.
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key, this.openLink = openInBrowser});
 
@@ -48,13 +48,12 @@ class AboutScreen extends StatelessWidget {
           const SizedBox(height: 20),
           _paragraph([
             const TextSpan(
-              text: 'When Is Bins is a free, independent demonstrator '
-                  'operated and funded by Public Digital Limited. Coverage '
-                  'and the dates available vary. For help, corrections, '
-                  'accessibility problems or privacy requests, email '
-                  'hello@whenisbins.com, or use the feedback link on the '
-                  'page concerned. Your council handles missed collections '
-                  'and changes to its service. Read ',
+              text: 'When Is Bin App is an independent app by Jessica '
+                  'Mumby. It reads bin collection dates from the WhenIsBins '
+                  'API, a free service operated by Public Digital. Questions '
+                  'about this app go to Jessica Mumby; corrections, '
+                  'accessibility and privacy questions about the data go to '
+                  'hello@whenisbins.com. Read ',
             ),
             _link('Sources', sourcesUrl),
             const TextSpan(text: ' for how to interpret an answer and '),
