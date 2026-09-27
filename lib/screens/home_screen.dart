@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/api_error_copy.dart';
 import '../core/postcode.dart';
 import '../core/theme.dart';
 import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
-import '../services/when_is_bins_api.dart';
 import 'address_entry_screen.dart';
 import 'address_select_screen.dart';
 import 'schedule_screen.dart';
@@ -22,6 +22,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _postcodeController = TextEditingController();
   String? _validationError;
+
+  /// The countdown that follows a rate-limited message, when the server asked
+  /// the app to wait a specific time.
+  String? _retryAfterCopy;
 
   @override
   void initState() {
@@ -47,6 +51,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _submit() async {
     final postcode = UkPostcode.normalise(_postcodeController.text);
+    // A countdown from an earlier attempt must never outlive its message.
+    setState(() => _retryAfterCopy = null);
     if (postcode.isEmpty) {
       setState(() => _validationError = 'Enter a postcode.');
       return;
@@ -67,7 +73,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
 
     if (lookup.error != null) {
-      setState(() => _validationError = _errorMessage(lookup.error!));
+      final error = lookup.error!;
+      setState(() {
+        _validationError = apiErrorCopy(error);
+        _retryAfterCopy = apiRetryAfterCopy(error.retryAfter);
+      });
       return;
     }
 
@@ -89,17 +99,6 @@ class _HomeScreenState extends State<HomeScreen> {
           builder: (_) => AddressEntryScreen(addressLookup: addressLookup),
         ),
       );
-    }
-  }
-
-  String _errorMessage(ApiException e) {
-    switch (e.problem) {
-      case 'postcode_outside_coverage':
-        return 'We could not find a collecting council for that postcode.';
-      case 'invalid_postcode':
-        return 'Enter a full UK postcode.';
-      default:
-        return e.detail ?? 'Something went wrong. Please try again.';
     }
   }
 
@@ -165,6 +164,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               onSubmitted: (_) => _submit(),
             ),
+            if (_retryAfterCopy != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _retryAfterCopy!,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.mutedFor(brightness),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,

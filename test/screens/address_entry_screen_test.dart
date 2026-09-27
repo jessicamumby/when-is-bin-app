@@ -9,6 +9,7 @@ import 'package:when_is_bin_app/models/schedule.dart';
 import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/address_entry_screen.dart';
+import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import '../fakes/fake_api.dart';
 
@@ -565,5 +566,35 @@ void main() {
 
     expect(find.text('A housing estate'), findsOneWidget);
     expect(find.text('Search for your street or area'), findsNothing);
+  });
+
+  testWidgets('a rate-limited submit reads as a busy service, with a countdown',
+      (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..error = const ApiException(
+        statusCode: 429,
+        problem: 'rate_limited',
+        detail: 'Network address allowance exceeded for wait token.',
+        retryAfter: Duration(seconds: 5),
+      );
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(
+      buildScreen(lookup, settings, lookupNeeding('property')),
+    );
+    await tester.enterText(find.byType(TextField), '15 Example Court');
+    await submitForm(tester);
+
+    expect(
+      find.text(
+        'Lots of people are checking bin days right now. '
+        'Try again in a minute.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Try again in about 5 seconds'), findsOneWidget);
+    expect(find.textContaining('allowance'), findsNothing,
+        reason: 'the API token wording must never reach the user');
   });
 }

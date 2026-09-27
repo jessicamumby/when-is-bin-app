@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/api_error_copy.dart';
 import '../core/theme.dart';
 import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/reminder_scheduler.dart';
 import '../services/reminder_sync_service.dart';
-import '../services/when_is_bins_api.dart';
 import 'address_select_screen.dart';
 
 /// First-launch onboarding. Step 1 collects the user's postcode and runs the
@@ -25,6 +25,10 @@ class OnboardingScreen extends StatefulWidget {
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _postcodeController = TextEditingController();
   String? _validationError;
+
+  /// The countdown that follows a rate-limited message, when the server asked
+  /// the app to wait a specific time.
+  String? _retryAfterCopy;
   ReminderTime _chosenTime = ReminderTime.evening;
 
   @override
@@ -35,6 +39,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Future<void> _submitPostcode() async {
     final postcode = _postcodeController.text.trim().toUpperCase();
+    // A countdown from an earlier attempt must never outlive its message.
+    setState(() => _retryAfterCopy = null);
     if (postcode.isEmpty) {
       setState(() => _validationError = 'Enter a postcode.');
       return;
@@ -46,7 +52,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (!mounted) return;
 
     if (lookup.error != null) {
-      setState(() => _validationError = _errorMessage(lookup.error!));
+      final error = lookup.error!;
+      setState(() {
+        _validationError = apiErrorCopy(error);
+        _retryAfterCopy = apiRetryAfterCopy(error.retryAfter);
+      });
       return;
     }
 
@@ -67,17 +77,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _validationError =
             'This council needs more information. Please try again later.';
       });
-    }
-  }
-
-  String _errorMessage(ApiException e) {
-    switch (e.problem) {
-      case 'postcode_outside_coverage':
-        return 'We could not find a collecting council for that postcode.';
-      case 'invalid_postcode':
-        return 'Enter a full UK postcode.';
-      default:
-        return e.detail ?? 'Something went wrong. Please try again.';
     }
   }
 
@@ -160,6 +159,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           onSubmitted: (_) => _submitPostcode(),
         ),
+        if (_retryAfterCopy != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _retryAfterCopy!,
+            style: const TextStyle(fontSize: 16, color: AppColors.muted),
+          ),
+        ],
         const SizedBox(height: 16),
         SizedBox(
           width: double.infinity,

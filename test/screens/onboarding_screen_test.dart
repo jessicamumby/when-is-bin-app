@@ -13,6 +13,7 @@ import 'package:when_is_bin_app/screens/onboarding_screen.dart';
 import 'package:when_is_bin_app/services/notification_service.dart';
 import 'package:when_is_bin_app/services/reminder_scheduler.dart';
 import 'package:when_is_bin_app/services/reminder_sync_service.dart';
+import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import '../fakes/fake_api.dart';
 import '../fakes/fake_notification_service.dart';
@@ -325,6 +326,59 @@ void main() {
         expect(settings.isOnboarded, isTrue);
       },
     );
+  });
+
+  group('Onboarding rate limited', () {
+    testWidgets('reads as a busy service, never as the API allowance',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 429,
+          problem: 'rate_limited',
+          detail: 'Network address allowance exceeded for wait token.',
+        );
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildApp(lookup, settings, FakeNotificationService()),
+      );
+
+      await tester.enterText(find.byType(TextField), postcode);
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'Lots of people are checking bin days right now. '
+          'Try again in a minute.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('allowance'), findsNothing);
+    });
+
+    testWidgets('shows the Retry-After as a countdown', (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 429,
+          problem: 'rate_limited',
+          detail: 'Slow down.',
+          retryAfter: Duration(seconds: 5),
+        );
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildApp(lookup, settings, FakeNotificationService()),
+      );
+
+      await tester.enterText(find.byType(TextField), postcode);
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Try again in about 5 seconds'), findsOneWidget);
+    });
   });
 
   group('Onboarding gating', () {

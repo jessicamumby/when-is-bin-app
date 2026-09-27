@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/api_error_copy.dart';
 import '../core/theme.dart';
 import '../models/address_input.dart';
 import '../models/address_lookup.dart';
@@ -94,8 +95,8 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
               if (provider.error != null) ...[
                 const SizedBox(height: 16),
                 _LookupErrorCard(
-                  detail: provider.error!.detail ??
-                      'We could not find your bin days.',
+                  detail: apiErrorCopy(provider.error!),
+                  retryCopy: apiRetryAfterCopy(provider.error!.retryAfter),
                   onStartOver: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -435,9 +436,16 @@ class _ChoiceTile extends StatelessWidget {
 }
 
 class _LookupErrorCard extends StatelessWidget {
-  const _LookupErrorCard({required this.detail, required this.onStartOver});
+  const _LookupErrorCard({
+    required this.detail,
+    required this.onStartOver,
+    this.retryCopy,
+  });
 
   final String detail;
+
+  /// The countdown after a rate-limited answer, when the server gave one.
+  final String? retryCopy;
   final VoidCallback onStartOver;
 
   @override
@@ -452,6 +460,10 @@ class _LookupErrorCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(detail, style: const TextStyle(fontSize: 16)),
+          if (retryCopy != null) ...[
+            const SizedBox(height: 8),
+            Text(retryCopy!, style: const TextStyle(fontSize: 16)),
+          ],
           const SizedBox(height: 8),
           TextButton(
             onPressed: onStartOver,
