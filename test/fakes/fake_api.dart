@@ -62,6 +62,9 @@ class FakeWhenIsBinsApi implements WhenIsBinsApi {
   Duration get timeout => WhenIsBinsApi.defaultTimeout;
 
   @override
+  Duration get waitTimeout => WhenIsBinsApi.defaultWaitTimeout;
+
+  @override
   Future<AddressLookup> getAddresses(String postcode, {String? q}) async {
     lastPostcode = postcode;
     lastAddressQuery = q;

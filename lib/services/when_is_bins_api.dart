@@ -88,10 +88,16 @@ class WhenIsBinsApi {
     required this.baseUrl,
     this.token,
     this.timeout = defaultTimeout,
+    this.waitTimeout = defaultWaitTimeout,
   }) : _client = client;
 
   /// How long a single request may take before it is abandoned.
   static const defaultTimeout = Duration(seconds: 15);
+
+  /// The deadline for `GET /lookups/{id}/wait`, which the server deliberately
+  /// holds open (roughly 25s) before it answers. It must stay comfortably
+  /// above that hold time, so it is much longer than [defaultTimeout].
+  static const defaultWaitTimeout = Duration(seconds: 40);
 
   /// What the user is told when the server answers with something this client
   /// cannot read: a rate limiter page, a gateway error, a truncated body.
@@ -113,6 +119,10 @@ class WhenIsBinsApi {
   /// The deadline for a single request. Without it a hung network call leaves
   /// the app loading for ever.
   final Duration timeout;
+
+  /// The deadline for `/wait` requests. The server holds those open far longer
+  /// than a normal request, so they get their own budget.
+  final Duration waitTimeout;
 
   /// Resolve a postcode to its council and required address input.
   Future<AddressLookup> getAddresses(String postcode, {String? q}) async {
@@ -160,7 +170,10 @@ class WhenIsBinsApi {
         if (after != null && after.isNotEmpty) 'after': after,
       },
     );
-    final response = await _send(() => _client.get(uri, headers: _headers()));
+    final response = await _send(
+      () => _client.get(uri, headers: _headers()),
+      timeout: waitTimeout,
+    );
     return LookupWait(
       lookup: Lookup.fromJson(_decode(response)),
       cursor: _header(response, 'x-lookup-cursor'),
@@ -209,9 +222,15 @@ class WhenIsBinsApi {
 
   /// Run a request with the configured deadline, turning transport failures
   /// into [ApiException]s so callers only ever handle one error type.
-  Future<http.Response> _send(Future<http.Response> Function() request) async {
+  ///
+  /// The `timeout` argument overrides the client-wide [timeout] for one call,
+  /// for the endpoints that need their own budget (only `/wait` does).
+  Future<http.Response> _send(
+    Future<http.Response> Function() request, {
+    Duration? timeout,
+  }) async {
     try {
-      return await request().timeout(timeout);
+      return await request().timeout(timeout ?? this.timeout);
     } on TimeoutException {
       throw const ApiException(
         statusCode: 0,

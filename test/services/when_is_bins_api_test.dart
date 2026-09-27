@@ -547,6 +547,62 @@ void main() {
       expect(api.timeout, const Duration(seconds: 15));
     });
 
+    test('gives /wait its own, longer default deadline', () {
+      final api = buildApi(MockClient((request) async => http.Response('{}', 200)));
+
+      // The server holds /wait open for roughly 25s, so the 15s default would
+      // kill every long-poll before the server could answer.
+      expect(api.waitTimeout, const Duration(seconds: 40));
+      expect(WhenIsBinsApi.defaultWaitTimeout, const Duration(seconds: 40));
+    });
+
+    test('honours the longer wait deadline for a held /wait response', () async {
+      final client = MockClient((request) async {
+        // A long-poll the server legitimately holds open, well past the
+        // ordinary request deadline but inside the wait budget.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        return http.Response(
+          jsonEncode({'id': 'lookup-1', 'status': 'running'}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final api = WhenIsBinsApi(
+        client: client,
+        baseUrl: baseUrl,
+        timeout: const Duration(milliseconds: 100),
+        waitTimeout: const Duration(milliseconds: 400),
+      );
+
+      final wait = await api.waitForLookup('lookup-1');
+
+      expect(wait.lookup.status, 'running');
+    });
+
+    test('keeps the ordinary deadline on every other endpoint', () async {
+      final client = MockClient((request) async {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        return http.Response(
+          jsonEncode({'id': 'lookup-1', 'status': 'running'}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      final api = WhenIsBinsApi(
+        client: client,
+        baseUrl: baseUrl,
+        timeout: const Duration(milliseconds: 100),
+        waitTimeout: const Duration(milliseconds: 400),
+      );
+
+      // Only /wait gets the longer budget: a snapshot must still fail fast.
+      await expectLater(
+        api.getLookup('lookup-1'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.problem, 'problem', 'timeout')),
+      );
+    });
+
     test('turns a hung request into an ApiException', () async {
       final api = buildApi(
         _HangingClient(),
