@@ -8,10 +8,16 @@ import 'package:http/http.dart' as http;
 /// accepted and then left silent (a flaky mobile network, a proxy that hangs)
 /// leaves the UI waiting for ever. This wrapper turns that into a
 /// [TimeoutException] the caller can handle.
+///
+/// The default is deliberately loose: it is a last-resort backstop against a
+/// socket that never answers, not a per-endpoint deadline. [WhenIsBinsApi]
+/// owns the real deadlines (15s for ordinary requests, 40s for `/wait`, which
+/// the server legitimately holds open for ~25s), so this must sit above all of
+/// them or it would cut a healthy long-poll short.
 class TimeoutHttpClient extends http.BaseClient {
   TimeoutHttpClient(
     this._inner, {
-    this.timeout = const Duration(seconds: 15),
+    this.timeout = const Duration(seconds: 60),
   });
 
   final http.Client _inner;
