@@ -119,6 +119,9 @@ class WhenIsBinsApi {
   /// The `problem` on an [ApiException] raised when the connection failed.
   static const networkProblem = 'network';
 
+  /// The prefix `property_id` values carry. Paths want the bare token.
+  static const _propertyIdPrefix = 'p:';
+
   final http.Client _client;
   final String baseUrl;
   final String? token;
@@ -197,8 +200,15 @@ class WhenIsBinsApi {
     String propertyToken, {
     String? etag,
   }) async {
+    // A `property_id` (and so the id the app saves) keeps its `p:` prefix, but
+    // the schedules path wants the bare token: sending the prefixed form only
+    // worked because the API answered a 301, costing a second request on every
+    // launch check.
+    final token = propertyToken.startsWith(_propertyIdPrefix)
+        ? propertyToken.substring(_propertyIdPrefix.length)
+        : propertyToken;
     final response = await _send(() => _client.get(
-          Uri.parse('$baseUrl/schedules/$propertyToken'),
+          Uri.parse('$baseUrl/schedules/$token'),
           headers: {
             ..._headers(),
             if (etag != null && etag.isNotEmpty) 'if-none-match': etag,

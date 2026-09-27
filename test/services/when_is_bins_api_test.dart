@@ -314,6 +314,53 @@ void main() {
       expect(check.etag, '"v1-abc123"');
     });
 
+    test('strips a leading p: so the path is the bare property token', () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'property_id': 'p:4c5ee6c2f2c7c959',
+            'address_match': 'exact',
+            'collections': [],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final api = buildApi(client);
+      // `property_id` values (and so the id the app saves) keep the `p:`
+      // prefix; the schedules path wants the bare token, and the API used to
+      // answer a 301 for the prefixed form - a second request on every launch.
+      final check = await api.checkSchedule('p:4c5ee6c2f2c7c959');
+
+      expect(captured.url.path, '/v1/schedules/4c5ee6c2f2c7c959');
+      // Only the path is normalised: what comes back is untouched.
+      expect(check.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+    });
+
+    test('strips only one leading p:', () async {
+      late http.Request captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'property_id': 'p:p:4c5ee6c2f2c7c959',
+            'address_match': 'exact',
+            'collections': [],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final api = buildApi(client);
+      await api.checkSchedule('p:p:4c5ee6c2f2c7c959');
+
+      expect(captured.url.path, '/v1/schedules/p:4c5ee6c2f2c7c959');
+    });
+
     test('sends If-None-Match when an etag is provided', () async {
       late http.Request captured;
       final client = MockClient((request) async {
