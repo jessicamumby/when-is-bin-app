@@ -15,8 +15,9 @@ class ReminderSyncService {
     required NotificationScheduler notifications,
     DateTime Function()? now,
     this.permissionTimeout = const Duration(seconds: 5),
-  })  : _notifications = notifications,
-        _now = now ?? DateTime.now;
+    this.syncTimeout = const Duration(seconds: 5),
+  }) : _notifications = notifications,
+       _now = now ?? DateTime.now;
 
   final NotificationScheduler _notifications;
   final DateTime Function() _now;
@@ -28,6 +29,12 @@ class ReminderSyncService {
   /// closed.
   final Duration permissionTimeout;
 
+  /// How long to wait for the platform to schedule the reminders before giving
+  /// up. The plugin's zonedSchedule can leave its method-channel result
+  /// undelivered (e.g. when it bails out of argument parsing), which would
+  /// otherwise hang the caller forever.
+  final Duration syncTimeout;
+
   /// Ask the OS for permission to post notifications; true when granted.
   ///
   /// Bounded: a platform that never answers is treated as denied rather than
@@ -35,7 +42,9 @@ class ReminderSyncService {
   /// permission hiccup never blocks the reminder flow.
   Future<bool> requestPermissions() async {
     try {
-      return await _notifications.requestPermissions().timeout(permissionTimeout);
+      return await _notifications.requestPermissions().timeout(
+        permissionTimeout,
+      );
     } catch (_) {
       return false;
     }
@@ -51,13 +60,22 @@ class ReminderSyncService {
     required bool enabled,
     required ReminderTime reminderTime,
   }) async {
-    final reminders =
-        _remindersFor(schedule, enabled: enabled, reminderTime: reminderTime);
+    final reminders = _remindersFor(
+      schedule,
+      enabled: enabled,
+      reminderTime: reminderTime,
+    );
     if (reminders == null || reminders.isEmpty) {
       await _notifications.cancelAll();
       return const [];
     }
-    await _notifications.scheduleReminders(reminders);
+    // Bounded: a hung zonedSchedule must not strand the caller (onboarding,
+    // the Settings toggle, or a cold start). The reminders are best-effort.
+    try {
+      await _notifications.scheduleReminders(reminders).timeout(syncTimeout);
+    } catch (_) {
+      // A scheduling failure is not fatal — the user can retry from Settings.
+    }
     return reminders;
   }
 

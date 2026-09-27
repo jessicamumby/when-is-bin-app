@@ -15,6 +15,9 @@ class FakeNotificationScheduler implements NotificationScheduler {
   /// permission callback.
   bool hangPermissionRequest = false;
 
+  /// When true, [scheduleReminders] never resolves — a hung zonedSchedule.
+  bool hangOnSchedule = false;
+
   @override
   Future<bool> requestPermissions() {
     permissionRequests++;
@@ -25,8 +28,12 @@ class FakeNotificationScheduler implements NotificationScheduler {
   }
 
   @override
-  Future<void> scheduleReminders(List<Reminder> reminders) async {
+  Future<void> scheduleReminders(List<Reminder> reminders) {
     scheduled.add(reminders);
+    if (hangOnSchedule) {
+      return Completer<void>().future;
+    }
+    return Future.value();
   }
 
   @override

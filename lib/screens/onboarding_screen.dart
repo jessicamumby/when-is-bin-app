@@ -88,12 +88,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     await settings.setReminderTime(_chosenTime);
     await settings.setRemindersEnabled(true);
-    await reminderSync.requestPermissions();
-    await reminderSync.sync(
-      schedule: lookup.schedule,
-      enabled: true,
-      reminderTime: _chosenTime,
-    );
+
+    // Permission and scheduling are best-effort. A platform failure — a
+    // permission dialog that never returns a verdict, or a zonedSchedule that
+    // errors or hangs — must never strand the user on onboarding. They can
+    // re-enable reminders from Settings later.
+    try {
+      await reminderSync.requestPermissions();
+      await reminderSync.sync(
+        schedule: lookup.schedule,
+        enabled: true,
+        reminderTime: _chosenTime,
+      );
+    } catch (_) {
+      debugPrint('Reminder setup failed; continuing onboarding.');
+    }
+
     await settings.markOnboarded();
   }
 

@@ -65,7 +65,9 @@ void main() {
       );
 
       final reminders = await sync.sync(
-        schedule: scheduleWith([collection('Black bin', ['2026-09-10'])]),
+        schedule: scheduleWith([
+          collection('Black bin', ['2026-09-10']),
+        ]),
         enabled: false,
         reminderTime: ReminderTime.evening,
       );
@@ -93,26 +95,28 @@ void main() {
       expect(scheduler.cancelAllCalls, 1);
     });
 
-    test('re-syncs from the current time, dropping reminders that have fired',
-        () async {
-      final scheduler = FakeNotificationScheduler();
-      final sync = ReminderSyncService(
-        // A week after the first collection, so only the second is upcoming.
-        now: () => DateTime(2026, 9, 15),
-        notifications: scheduler,
-      );
+    test(
+      're-syncs from the current time, dropping reminders that have fired',
+      () async {
+        final scheduler = FakeNotificationScheduler();
+        final sync = ReminderSyncService(
+          // A week after the first collection, so only the second is upcoming.
+          now: () => DateTime(2026, 9, 15),
+          notifications: scheduler,
+        );
 
-      final reminders = await sync.sync(
-        schedule: scheduleWith([
-          collection('Black bin', ['2026-09-10', '2026-09-24']),
-        ]),
-        enabled: true,
-        reminderTime: ReminderTime.evening,
-      );
+        final reminders = await sync.sync(
+          schedule: scheduleWith([
+            collection('Black bin', ['2026-09-10', '2026-09-24']),
+          ]),
+          enabled: true,
+          reminderTime: ReminderTime.evening,
+        );
 
-      expect(reminders, hasLength(1));
-      expect(reminders.single.collectionDate, DateTime(2026, 9, 24));
-    });
+        expect(reminders, hasLength(1));
+        expect(reminders.single.collectionDate, DateTime(2026, 9, 24));
+      },
+    );
   });
 
   group('ReminderSyncService exclusions', () {
@@ -128,7 +132,9 @@ void main() {
           propertyId: 'p:4c5ee6c2f2c7c959',
           addressMatch: 'exact',
           provisional: true,
-          collections: [collection('Black bin', ['2026-09-10'])],
+          collections: [
+            collection('Black bin', ['2026-09-10']),
+          ],
         ),
         enabled: true,
         reminderTime: ReminderTime.evening,
@@ -149,11 +155,9 @@ void main() {
       final reminders = await sync.sync(
         schedule: scheduleWith([
           collection('Black bin', ['2026-09-10']),
-          collection(
-            'Garden waste',
-            ['2026-09-11'],
-            subscriptionRequired: true,
-          ),
+          collection('Garden waste', [
+            '2026-09-11',
+          ], subscriptionRequired: true),
         ]),
         enabled: true,
         reminderTime: ReminderTime.evening,
@@ -174,11 +178,9 @@ void main() {
 
       final reminders = await sync.sync(
         schedule: scheduleWith([
-          collection(
-            'Garden waste',
-            ['2026-09-10'],
-            subscriptionRequired: true,
-          ),
+          collection('Garden waste', [
+            '2026-09-10',
+          ], subscriptionRequired: true),
         ]),
         enabled: true,
         reminderTime: ReminderTime.evening,
@@ -196,7 +198,9 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final first = SettingsProvider(prefs);
       await first.saveSchedule(
-        scheduleWith([collection('Black bin', ['2026-09-10'])]),
+        scheduleWith([
+          collection('Black bin', ['2026-09-10']),
+        ]),
       );
       await first.setRemindersEnabled(true);
 
@@ -223,12 +227,16 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final first = SettingsProvider(prefs);
-      await first.saveSchedule(Schedule(
-        propertyId: 'p:4c5ee6c2f2c7c959',
-        addressMatch: 'fuzzy',
-        provisional: true,
-        collections: [collection('Black bin', ['2026-09-10'])],
-      ));
+      await first.saveSchedule(
+        Schedule(
+          propertyId: 'p:4c5ee6c2f2c7c959',
+          addressMatch: 'fuzzy',
+          provisional: true,
+          collections: [
+            collection('Black bin', ['2026-09-10']),
+          ],
+        ),
+      );
       await first.setRemindersEnabled(true);
 
       final settings = SettingsProvider(prefs);
@@ -254,7 +262,9 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final first = SettingsProvider(prefs);
       await first.saveSchedule(
-        scheduleWith([collection('Black bin', ['2026-09-10'])]),
+        scheduleWith([
+          collection('Black bin', ['2026-09-10']),
+        ]),
       );
 
       final settings = SettingsProvider(prefs);
@@ -284,8 +294,7 @@ void main() {
       expect(scheduler.permissionRequests, 1);
     });
 
-    test(
-        'treats a permission request that never resolves as denied instead '
+    test('treats a permission request that never resolves as denied instead '
         'of hanging', () async {
       // The orphaned Android onRequestPermissionsResult never reaches the
       // waiting Dart future. Bounded so the caller (onboarding, the Settings
@@ -300,5 +309,32 @@ void main() {
       expect(await sync.requestPermissions(), isFalse);
       expect(scheduler.permissionRequests, 1);
     });
+  });
+
+  group('ReminderSyncService scheduling resilience', () {
+    test(
+      'sync returns without hanging when scheduling never resolves',
+      () async {
+        // A hung zonedSchedule (the plugin's method-channel result never
+        // delivered) must not strand the caller — onboarding, the Settings
+        // toggle, or a cold start.
+        final scheduler = FakeNotificationScheduler()..hangOnSchedule = true;
+        final sync = ReminderSyncService(
+          notifications: scheduler,
+          now: () => now,
+          syncTimeout: const Duration(milliseconds: 1),
+        );
+
+        final reminders = await sync.sync(
+          schedule: scheduleWith([
+            collection('Black bin', ['2026-09-10']),
+          ]),
+          enabled: true,
+          reminderTime: ReminderTime.evening,
+        );
+
+        expect(reminders, hasLength(1));
+      },
+    );
   });
 }

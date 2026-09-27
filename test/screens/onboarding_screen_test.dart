@@ -27,7 +27,11 @@ void main() {
     propertyId: 'p:1',
     addressMatch: 'exact',
     collections: [
-      Collection(name: 'Black bin', wasteType: 'rubbish', dates: ['2026-10-01']),
+      Collection(
+        name: 'Black bin',
+        wasteType: 'rubbish',
+        dates: ['2026-10-01'],
+      ),
     ],
   );
 
@@ -46,12 +50,12 @@ void main() {
         ChangeNotifierProvider<LookupProvider>.value(value: lookup),
         ChangeNotifierProvider<SettingsProvider>.value(value: settings),
         Provider<NotificationService>.value(value: notifications),
-                Provider<ReminderSyncService>.value(
-                  value: ReminderSyncService(notifications: notifications),
-                ),
-              ],
-              child: const MaterialApp(home: OnboardingScreen()),
-            );
+        Provider<ReminderSyncService>.value(
+          value: ReminderSyncService(notifications: notifications),
+        ),
+      ],
+      child: const MaterialApp(home: OnboardingScreen()),
+    );
   }
 
   group('Onboarding postcode step', () {
@@ -69,8 +73,9 @@ void main() {
       expect(find.text('Find my bin day'), findsOneWidget);
     });
 
-    testWidgets('promises a reminder the morning or evening before',
-        (tester) async {
+    testWidgets('promises a reminder the morning or evening before', (
+      tester,
+    ) async {
       final settings = await makeSettings();
       final api = FakeWhenIsBinsApi();
       final lookup = LookupProvider(api: api);
@@ -106,8 +111,9 @@ void main() {
       expect(find.text('Enter a postcode.'), findsOneWidget);
     });
 
-    testWidgets('submits a postcode and opens the address select screen',
-        (tester) async {
+    testWidgets('submits a postcode and opens the address select screen', (
+      tester,
+    ) async {
       final settings = await makeSettings();
       final api = FakeWhenIsBinsApi()
         ..addressLookup = AddressLookup(
@@ -128,8 +134,9 @@ void main() {
       expect(find.text('15 EXAMPLE COURT'), findsOneWidget);
     });
 
-    testWidgets('pushes a light address select screen under a dark app theme',
-        (tester) async {
+    testWidgets('pushes a light address select screen under a dark app theme', (
+      tester,
+    ) async {
       final settings = await makeSettings();
       final api = FakeWhenIsBinsApi()
         ..addressLookup = AddressLookup(
@@ -172,8 +179,9 @@ void main() {
       expect(headline.style?.color, AppColors.ink);
     });
 
-    testWidgets('shows the reminder step after choosing an address',
-        (tester) async {
+    testWidgets('shows the reminder step after choosing an address', (
+      tester,
+    ) async {
       final settings = await makeSettings();
       final api = FakeWhenIsBinsApi()
         ..addressLookup = AddressLookup(
@@ -226,8 +234,9 @@ void main() {
       return lookup;
     }
 
-    testWidgets('asks for a reminder time once a schedule is found',
-        (tester) async {
+    testWidgets('asks for a reminder time once a schedule is found', (
+      tester,
+    ) async {
       final settings = await makeSettings();
       final lookup = await lookupWithSchedule();
 
@@ -241,8 +250,7 @@ void main() {
       expect(find.text('Turn on reminders'), findsOneWidget);
     });
 
-    testWidgets(
-        'turning on reminders saves the time, requests permission, '
+    testWidgets('turning on reminders saves the time, requests permission, '
         'and marks onboarding complete', (tester) async {
       final settings = await makeSettings();
       final lookup = await lookupWithSchedule();
@@ -259,8 +267,9 @@ void main() {
       expect(notifications.requestPermissionCount, 1);
     });
 
-    testWidgets('turning on reminders schedules the collections',
-        (tester) async {
+    testWidgets('turning on reminders schedules the collections', (
+      tester,
+    ) async {
       final settings = await makeSettings();
       final lookup = await lookupWithSchedule();
       final notifications = FakeNotificationService();
@@ -274,8 +283,7 @@ void main() {
       expect(notifications.lastReminders, isNotEmpty);
     });
 
-    testWidgets(
-        'completes onboarding even when the permission dialog never '
+    testWidgets('completes onboarding even when the permission dialog never '
         'returns a verdict', (tester) async {
       // The orphaned Android permission callback: the OS box appears, the
       // user taps Allow or Don't allow, but the plugin's onRequestPermissions
@@ -297,6 +305,26 @@ void main() {
 
       expect(settings.isOnboarded, isTrue);
     });
+
+    testWidgets(
+      'completes onboarding even when scheduling the reminders fails',
+      (tester) async {
+        // The plugin's zonedSchedule can error (or hang) — e.g. when its
+        // extractNotificationDetails returns null and the method-channel result
+        // is never delivered. A scheduling failure must not strand the user on
+        // onboarding; they can re-enable reminders from Settings later.
+        final settings = await makeSettings();
+        final lookup = await lookupWithSchedule();
+        final notifications = FakeNotificationService()..throwOnSchedule = true;
+
+        await tester.pumpWidget(buildApp(lookup, settings, notifications));
+
+        await tester.tap(find.text('Turn on reminders'));
+        await tester.pump();
+
+        expect(settings.isOnboarded, isTrue);
+      },
+    );
   });
 
   group('Onboarding gating', () {
@@ -310,16 +338,17 @@ void main() {
           ChangeNotifierProvider<LookupProvider>.value(value: lookup),
           ChangeNotifierProvider<SettingsProvider>.value(value: settings),
           Provider<NotificationService>.value(value: notifications),
-                    Provider<ReminderSyncService>.value(
-                      value: ReminderSyncService(notifications: notifications),
-                    ),
-                  ],
-                  child: const WhenIsBinApp(),
-                );
+          Provider<ReminderSyncService>.value(
+            value: ReminderSyncService(notifications: notifications),
+          ),
+        ],
+        child: const WhenIsBinApp(),
+      );
     }
 
-    testWidgets('shows onboarding until the user has completed it',
-        (tester) async {
+    testWidgets('shows onboarding until the user has completed it', (
+      tester,
+    ) async {
       final settings = await makeSettings(onboarded: false);
       final lookup = LookupProvider(api: FakeWhenIsBinsApi());
 
@@ -338,8 +367,7 @@ void main() {
       expect(find.text('Use this service to:'), findsOneWidget);
     });
 
-    testWidgets('goes straight to home when already onboarded',
-        (tester) async {
+    testWidgets('goes straight to home when already onboarded', (tester) async {
       final settings = await makeSettings(onboarded: true);
       final lookup = LookupProvider(api: FakeWhenIsBinsApi());
 
@@ -355,8 +383,9 @@ void main() {
   });
 
   group('Onboarding theme', () {
-    testWidgets('renders in light mode even under a dark app theme',
-        (tester) async {
+    testWidgets('renders in light mode even under a dark app theme', (
+      tester,
+    ) async {
       final settings = await makeSettings();
       final lookup = LookupProvider(api: FakeWhenIsBinsApi());
       final notifications = FakeNotificationService();
@@ -380,10 +409,7 @@ void main() {
 
       final context = tester.element(find.text('Find your bin day'));
       expect(Theme.of(context).brightness, Brightness.light);
-      expect(
-        Theme.of(context).scaffoldBackgroundColor,
-        AppColors.paper,
-      );
+      expect(Theme.of(context).scaffoldBackgroundColor, AppColors.paper);
     });
   });
 }
