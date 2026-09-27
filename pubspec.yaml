@@ -2,7 +2,7 @@ name: when_is_bin_app
 description: "Find your UK bin collection days and get a reminder the night before."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.12.2
