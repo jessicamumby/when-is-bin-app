@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api_error_copy.dart';
 import '../core/theme.dart';
 import '../models/schedule.dart';
 import '../providers/lookup_provider.dart';
@@ -55,6 +56,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   ) {
     final schedule = lookup.schedule;
     final muted = AppColors.mutedFor(Theme.of(context).brightness);
+    final notes = cleanScheduleNotes(schedule?.notes);
 
     return schedule == null
         ? Scaffold(
@@ -93,10 +95,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     ),
                   // The council's own caveats belong with the address they
                   // apply to, before the dates they qualify.
-                  if (schedule.notes != null && schedule.notes!.isNotEmpty) ...[
+                  if (notes != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      schedule.notes!,
+                      notes,
                       style: TextStyle(fontSize: 16, color: muted),
                     ),
                   ],
@@ -152,7 +154,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final error = lookup.error;
     if (error != null) {
       return _ErrorState(
-        detail: error.detail,
+        detail: apiErrorCopy(error),
         onRetry: _canRetry(lookup) ? () => _retry(lookup) : null,
         onSearch: () => Navigator.of(context).pop(),
       );
@@ -591,6 +593,20 @@ String? councilWaitCopy(int? seconds) {
   if (seconds == null || seconds <= 0) return null;
   if (seconds == 60) return 'Usually about a minute for this council';
   return 'Usually about $seconds seconds for this council';
+}
+
+/// The council's notes, with the API's own bracketed source annotations
+/// dropped. The notes carry the caveats a citizen should see, but they can
+/// also embed the server's internal bookkeeping — like "(renderform t=213)",
+/// which a council uses to trace the source and a citizen has no use for.
+/// Null in, null out; a note with nothing left to say becomes null.
+String? cleanScheduleNotes(String? notes) {
+  if (notes == null) return null;
+  final cleaned = notes
+      .replaceAll(RegExp(r'\s*\([^()]*\)'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  return cleaned.isEmpty ? null : cleaned;
 }
 
 /// Split out so the message can carry the active brightness' token while the
