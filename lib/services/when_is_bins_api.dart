@@ -13,11 +13,18 @@ class ApiException implements Exception {
     required this.statusCode,
     this.problem,
     this.detail,
+    this.retryAfter,
   });
 
   final int statusCode;
   final String? problem;
   final String? detail;
+
+  /// How long the server asked the caller to wait before retrying, from a
+  /// `Retry-After` response header. Null when the server sent none (or sent a
+  /// form this client cannot read), in which case the caller falls back to its
+  /// own backoff.
+  final Duration? retryAfter;
 
   @override
   String toString() => 'ApiException($statusCode, $problem, $detail)';
@@ -265,6 +272,9 @@ class WhenIsBinsApi {
       statusCode: response.statusCode,
       problem: body?['problem'] as String?,
       detail: (body?['detail'] as String?) ?? unexpectedResponseDetail,
+      // A 429 tells the caller how long to wait; discarding it here forced
+      // every caller to guess and retry too soon.
+      retryAfter: _retryAfter(response),
     );
   }
 

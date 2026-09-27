@@ -631,4 +631,80 @@ void main() {
       );
     });
   });
+
+  group('rate limiting', () {
+    test('carries no Retry-After when the server did not send one', () {
+      const exception = ApiException(statusCode: 429, problem: 'rate_limited');
+
+      expect(exception.retryAfter, isNull);
+    });
+
+    test('a 429 from getAddresses carries the server\'s Retry-After', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'problem': 'rate_limited',
+            'detail': 'Too many requests.',
+          }),
+          429,
+          headers: {
+            'content-type': 'application/json',
+            'Retry-After': '5',
+          },
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.getAddresses('CB4 2HX'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 429)
+            .having((e) => e.problem, 'problem', 'rate_limited')
+            .having((e) => e.retryAfter, 'retryAfter',
+                const Duration(seconds: 5))),
+      );
+    });
+
+    test('a 429 from waitForLookup carries the server\'s Retry-After', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'problem': 'rate_limited'}),
+          429,
+          headers: {'Retry-After': '5'},
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.waitForLookup('lookup-1'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 429)
+            .having((e) => e.problem, 'problem', 'rate_limited')
+            .having((e) => e.retryAfter, 'retryAfter',
+                const Duration(seconds: 5))),
+      );
+    });
+
+    test('a 429 without a Retry-After leaves the caller its own backoff',
+        () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'problem': 'rate_limited'}),
+          429,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.getAddresses('CB4 2HX'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 429)
+            .having((e) => e.retryAfter, 'retryAfter', isNull)),
+      );
+    });
+  });
 }
