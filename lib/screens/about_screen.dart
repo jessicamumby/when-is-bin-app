@@ -15,6 +15,7 @@ Future<bool> openInBrowser(Uri url) =>
 
 const String sourcesUrl = 'https://whenisbins.com/sources';
 const String privacyUrl = 'https://whenisbins.com/privacy';
+const String linkedInUrl = 'https://www.linkedin.com/in/jessbuildstech';
 const String aiAgentsUrl =
     'https://loosemore.com/2026/02/25/ai-agents-will-join-up-government-'
     'before-government-does/';
@@ -48,8 +49,11 @@ class AboutScreen extends StatelessWidget {
           const SizedBox(height: 20),
           _paragraph([
             const TextSpan(
-              text: 'When Is Bin App is an independent app by Jessica '
-                  'Mumby. It reads bin collection dates from the WhenIsBins '
+              text: 'When Is Bin App is an independent app by ',
+            ),
+            _link('Jessica Mumby', linkedInUrl),
+            const TextSpan(
+              text: '. It reads bin collection dates from the WhenIsBins '
                   'API, a free service operated by Public Digital. Questions '
                   'about this app go to Jessica Mumby; corrections, '
                   'accessibility and privacy questions about the data go to '

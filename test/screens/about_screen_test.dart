@@ -9,6 +9,7 @@ void main() {
 
   const sourcesUrl = 'https://whenisbins.com/sources';
   const privacyUrl = 'https://whenisbins.com/privacy';
+  const linkedInUrl = 'https://www.linkedin.com/in/jessbuildstech';
   const agentsUrl =
       'https://loosemore.com/2026/02/25/ai-agents-will-join-up-government-before-government-does/';
 
@@ -56,10 +57,10 @@ void main() {
         (tester) async {
       await pumpAbout(tester);
 
-      expect(
-        find.textContaining('an independent app by Jessica Mumby'),
-        findsOneWidget,
-      );
+      // The developer's name is now a tappable link, so it sits in its own text
+      // node rather than inside the surrounding sentence.
+      expect(find.textContaining('an independent app by '), findsOneWidget);
+      expect(find.text('Jessica Mumby'), findsOneWidget);
       expect(
         find.textContaining(
           'It reads bin collection dates from the WhenIsBins API, a free '
@@ -113,6 +114,17 @@ void main() {
       ]);
     });
 
+    testWidgets('links the developer to her LinkedIn profile', (tester) async {
+      final opened = await pumpAbout(tester);
+
+      final link = find.text('Jessica Mumby');
+      expect(link, findsOneWidget);
+      await tester.tap(link);
+      await tester.pump();
+
+      expect(opened, [Uri.parse(linkedInUrl)]);
+    });
+
     testWidgets('renders in the light design system on any device theme',
         (tester) async {
       tester.platformDispatcher.platformBrightnessTestValue =
@@ -157,15 +169,20 @@ void main() {
 
       expect(
         buttonLabels,
-        containsAll(<String>['Sources', 'Privacy', 'AI agents']),
+        containsAll(<String>[
+          'Jessica Mumby',
+          'Sources',
+          'Privacy',
+          'AI agents',
+        ]),
         reason: 'each tappable link must be its own labelled button',
       );
-      // Exactly three: when a link is the last span in a paragraph, an
+      // Exactly four: when a link is the last span in a paragraph, an
       // uncontained Semantics annotation merges upward and turns the whole
       // sentence into one button — announced as a button, tappable anywhere.
       expect(
         buttonLabels,
-        hasLength(3),
+        hasLength(4),
         reason: 'only the links should be exposed as buttons, got $buttonLabels',
       );
 

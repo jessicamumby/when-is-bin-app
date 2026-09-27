@@ -553,6 +553,33 @@ void main() {
     expect(find.text('Search for your postcode'), findsOneWidget);
   });
 
+  testWidgets('a rate-limited lookup shows the friendly message, not the API '
+      'detail', (tester) async {
+    final settings = await makeSettings();
+    final api = FakeWhenIsBinsApi()
+      ..addressLookup =
+          AddressLookup(postcode: 'CB4 2HX', requiredInput: 'none');
+    final lookup = LookupProvider(api: api);
+    await lookup.lookupPostcode('CB4 2HX');
+    api.error = ApiException(
+      statusCode: 429,
+      problem: 'rate_limited',
+      detail: 'Anonymous allowance exhausted (10 lookups a minute).',
+    );
+    await lookup.submitLookup(postcode: 'CB4 2HX', address: const {});
+
+    await tester.pumpWidget(buildHostedSchedule(settings, lookup));
+    await openSchedule(tester);
+
+    expect(find.text('We could not load your bin days.'), findsOneWidget);
+    expect(
+      find.text('Lots of people are checking bin days right now. '
+          'Try again in a minute.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Anonymous allowance'), findsNothing);
+  });
+
   testWidgets('shows the council caveats as a muted line', (tester) async {
     final settings = await makeSettings();
     const notes = 'Assisted collections move back a day after a bank holiday.';

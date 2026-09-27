@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api_error_copy.dart';
 import '../core/theme.dart';
 import '../models/schedule.dart';
 import '../providers/lookup_provider.dart';
@@ -152,7 +153,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final error = lookup.error;
     if (error != null) {
       return _ErrorState(
-        detail: error.detail,
+        detail: apiErrorCopy(error),
         onRetry: _canRetry(lookup) ? () => _retry(lookup) : null,
         onSearch: () => Navigator.of(context).pop(),
       );

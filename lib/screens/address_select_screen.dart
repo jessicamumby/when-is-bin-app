@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/api_error_copy.dart';
 import '../core/theme.dart';
 import '../models/address_lookup.dart';
 import '../providers/lookup_provider.dart';
@@ -108,18 +109,21 @@ class AddressSelectScreen extends StatelessWidget {
                         );
                       }
                     } else if (lookup.error != null) {
+                      final error = lookup.error!;
                       final councilUrl =
                           lookup.failedLookup?.council?.lookupUrl;
+                      final retryAfter = apiRetryAfterCopy(error.retryAfter);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                lookup.error!.detail ??
-                                    'We could not find your bin days.',
-                              ),
+                              Text(apiErrorCopy(error)),
+                              if (retryAfter != null) ...[
+                                const SizedBox(height: 4),
+                                Text(retryAfter),
+                              ],
                               // The council's own page is where the user can
                               // check by hand, so the failure offers it.
                               if (councilUrl != null)

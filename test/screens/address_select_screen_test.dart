@@ -11,6 +11,7 @@ import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/address_select_screen.dart';
 import 'package:when_is_bin_app/screens/home_screen.dart';
+import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import '../fakes/fake_api.dart';
 
@@ -254,6 +255,32 @@ void main() {
     );
     expect(find.text("Check on your council's site"), findsOneWidget,
         reason: 'the way to check by hand belongs with the failure');
+  });
+
+  testWidgets('a rate-limited pick shows the friendly message, not the API '
+      'detail', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = SettingsProvider(await SharedPreferences.getInstance());
+    final api = FakeWhenIsBinsApi()
+      ..error = ApiException(
+        statusCode: 429,
+        problem: 'rate_limited',
+        detail: 'Anonymous allowance exhausted (10 lookups a minute).',
+        retryAfter: const Duration(seconds: 45),
+      );
+    final lookup = LookupProvider(api: api);
+
+    await tester.pumpWidget(buildApp(lookup, settings));
+    await tester.tap(find.text(candidate.label));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Lots of people are checking bin days right now. '
+          'Try again in a minute.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Anonymous allowance'), findsNothing);
+    expect(find.text('Try again in about 45 seconds'), findsOneWidget);
   });
 
   testWidgets('a provisional answer is shown but never saved', (tester) async {
