@@ -130,6 +130,7 @@ class Schedule {
     this.calendarUrl,
     this.uprn,
     this.provisional = false,
+    this.notes,
   });
 
   final String propertyId;
@@ -145,6 +146,10 @@ class Schedule {
   final String? calendarUrl;
   final String? uprn;
   final bool provisional;
+
+  /// Plain-English caveats the council published with the schedule, e.g. that
+  /// collections move a day after a bank holiday. Null when there are none.
+  final String? notes;
 
   factory Schedule.fromJson(Map<String, dynamic> json) {
     return Schedule(
@@ -167,6 +172,7 @@ class Schedule {
       calendarUrl: json['calendar_url'] as String?,
       uprn: json['uprn'] as String?,
       provisional: json['provisional'] as bool? ?? false,
+      notes: json['notes'] as String?,
     );
   }
 }

@@ -98,6 +98,32 @@ void main() {
       expect(schedule.uprn, '100023336956');
     });
 
+    test('parses the plain-English notes string', () {
+      final json = {
+        'property_id': 'p:4c5ee6c2f2c7c959',
+        'address_match': 'exact',
+        'collections': [],
+        'notes': 'Collections may be a day later after a bank holiday.',
+      };
+
+      final schedule = Schedule.fromJson(json);
+
+      expect(schedule.notes,
+          'Collections may be a day later after a bank holiday.');
+    });
+
+    test('leaves notes null when the council published none', () {
+      final json = {
+        'property_id': 'p:abc',
+        'address_match': 'exact',
+        'collections': [],
+      };
+
+      final schedule = Schedule.fromJson(json);
+
+      expect(schedule.notes, isNull);
+    });
+
     test('handles a schedule with no by_date', () {
       final json = {
         'property_id': 'p:abc',
