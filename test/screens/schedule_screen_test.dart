@@ -44,6 +44,45 @@ class _PendingLookupApi extends FakeWhenIsBinsApi {
   }
 }
 
+/// A fake whose lookup is created straight away but whose wait never answers,
+/// so the loading state can be inspected with the council's own figures in
+/// hand.
+class _SlowPollApi extends FakeWhenIsBinsApi {
+  _SlowPollApi({
+    this.expectedWaitSeconds,
+    this.progressMessage,
+    this.queueAhead,
+  });
+
+  final int? expectedWaitSeconds;
+  final String? progressMessage;
+  final int? queueAhead;
+  final _wait = Completer<LookupWait>();
+
+  @override
+  Future<Lookup> createLookup(
+    Map<String, dynamic> body, {
+    required String idempotencyKey,
+  }) async {
+    createLookupCalls++;
+    lookupBodies.add(body);
+    return Lookup(
+      id: 'lookup-1',
+      status: 'queued',
+      expectedWaitSeconds: expectedWaitSeconds,
+      queueAhead: queueAhead,
+      progress: progressMessage == null
+          ? null
+          : LookupProgress(stage: 'council', message: progressMessage),
+    );
+  }
+
+  @override
+  Future<LookupWait> waitForLookup(String lookupId, {String? after}) {
+    return _wait.future;
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -338,6 +377,115 @@ void main() {
 
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text(nextCollectionLabel), findsOneWidget);
+  });
+
+  group('the loading state', () {
+    /// Opens the schedule screen while [lookup] is still in flight.
+    Future<void> openWhileLoading(
+      WidgetTester tester,
+      SettingsProvider settings,
+      LookupProvider lookup,
+    ) async {
+      await tester.pumpWidget(buildHostedSchedule(settings, lookup));
+      await tester.tap(find.text('Open your bin days'));
+      // Not pumpAndSettle: the spinner never stops, so the route transition is
+      // pumped by hand.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    testWidgets('says how long this council usually takes', (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi(
+        expectedWaitSeconds: 60,
+        progressMessage: 'Asking your council for your dates',
+        queueAhead: 3,
+      );
+      final lookup = LookupProvider(api: api);
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.textContaining('Finding your bin days'), findsOneWidget);
+      expect(find.text('Usually about a minute for this council'),
+          findsOneWidget);
+      expect(find.text('Asking your council for your dates'), findsOneWidget);
+      expect(find.text('there are 3 other lookups ahead'), findsOneWidget);
+    });
+
+    testWidgets('says the wait in seconds when it is not a whole minute',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi(expectedWaitSeconds: 45);
+      final lookup = LookupProvider(api: api);
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.text('Usually about 45 seconds for this council'),
+          findsOneWidget);
+    });
+
+    testWidgets('falls back to the council the address lookup named',
+        (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi()
+        ..addressLookup = const AddressLookup(
+          postcode: 'CB4 2HX',
+          requiredInput: 'none',
+          council: Council(
+            id: 'E07000008',
+            name: 'Cambridge City Council',
+            expectedWaitSeconds: 30,
+          ),
+        );
+      final lookup = LookupProvider(api: api);
+      await lookup.lookupPostcode('CB4 2HX');
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.text('Usually about 30 seconds for this council'),
+          findsOneWidget);
+    });
+
+    testWidgets('says nothing it cannot back up', (tester) async {
+      final settings = await makeSettings();
+      final api = _SlowPollApi();
+      final lookup = LookupProvider(api: api);
+      unawaited(lookup.submitLookup(postcode: 'CB4 2HX', address: const {}));
+
+      await openWhileLoading(tester, settings, lookup);
+
+      expect(find.textContaining('Usually about'), findsNothing);
+      expect(find.textContaining('other lookups ahead'), findsNothing);
+    });
+  });
+
+  group('councilWaitCopy', () {
+    test('a whole minute reads as a minute', () {
+      expect(
+        councilWaitCopy(60),
+        'Usually about a minute for this council',
+      );
+    });
+
+    test('anything else is the seconds it is', () {
+      expect(
+        councilWaitCopy(45),
+        'Usually about 45 seconds for this council',
+      );
+      expect(
+        councilWaitCopy(120),
+        'Usually about 120 seconds for this council',
+      );
+    });
+
+    test('says nothing when there is no honest figure', () {
+      expect(councilWaitCopy(null), isNull);
+      expect(councilWaitCopy(0), isNull);
+      expect(councilWaitCopy(-5), isNull);
+    });
   });
 
   testWidgets('shows a friendly error with a retry when the lookup failed',

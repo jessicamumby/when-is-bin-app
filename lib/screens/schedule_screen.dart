@@ -136,7 +136,18 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   /// empty. Each one says what happened and offers the next step, instead of
   /// leaving the user on a bare line of text.
   Widget _placeholder(LookupProvider lookup) {
-    if (lookup.isLoading) return const _LoadingState();
+    if (lookup.isLoading) {
+      final active = lookup.activeLookup;
+      return _LoadingState(
+        // The in-flight lookup's own figure is the current one; the council
+        // the address lookup named is the fallback for the moment before it.
+        waitSeconds:
+            active?.expectedWaitSeconds ??
+                lookup.addressLookup?.council?.expectedWaitSeconds,
+        progressMessage: active?.progress?.message,
+        queueAhead: active?.queueAhead,
+      );
+    }
 
     final error = lookup.error;
     if (error != null) {
@@ -515,21 +526,71 @@ class _InsetCard extends StatelessWidget {
 
 /// Nothing is loaded yet and a lookup is in flight.
 class _LoadingState extends StatelessWidget {
-  const _LoadingState();
+  const _LoadingState({
+    this.waitSeconds,
+    this.progressMessage,
+    this.queueAhead,
+  });
+
+  /// How long this council's lookups usually take, when the API has said.
+  final int? waitSeconds;
+
+  /// What the lookup is doing at this moment, in the API's own words.
+  final String? progressMessage;
+
+  /// How many lookups the server had ahead of this one.
+  final int? queueAhead;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(height: 16),
-          _LoadingMessage(),
-        ],
+    final muted = AppColors.mutedFor(Theme.of(context).brightness);
+    final style = TextStyle(fontSize: 16, color: muted);
+    final wait = councilWaitCopy(waitSeconds);
+    final message = progressMessage;
+    final ahead = queueAhead ?? 0;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            const _LoadingMessage(),
+            // Only ever say what the API actually told us: between them these
+            // lines are this council's own estimate, its current stage and how
+            // far down the queue this lookup is.
+            if (wait != null) ...[
+              const SizedBox(height: 8),
+              Text(wait, style: style, textAlign: TextAlign.center),
+            ],
+            if (message != null && message.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(message, style: style, textAlign: TextAlign.center),
+            ],
+            if (ahead > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                'there are $ahead other lookups ahead',
+                style: style,
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
+}
+
+/// How long this council's lookups usually take, in the plainest terms the
+/// figure allows. Null when there is no honest figure to give: a made-up one
+/// is worse than none.
+String? councilWaitCopy(int? seconds) {
+  if (seconds == null || seconds <= 0) return null;
+  if (seconds == 60) return 'Usually about a minute for this council';
+  return 'Usually about $seconds seconds for this council';
 }
 
 /// Split out so the message can carry the active brightness' token while the

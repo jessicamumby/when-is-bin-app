@@ -48,6 +48,11 @@ class LookupProvider extends ChangeNotifier {
   String? _pendingLookupId;
   Lookup? _failedLookup;
 
+  /// The lookup that is in flight right now, if any: what the loading screen
+  /// needs to say how long this council usually takes and how far along the
+  /// lookup has got.
+  Lookup? _activeLookup;
+
   /// The last address submitted, kept whole so it can be resubmitted with
   /// `allow_postcode_representative` once the user consents.
   Map<String, dynamic>? _lastSubmittedAddress;
@@ -71,6 +76,13 @@ class LookupProvider extends ChangeNotifier {
   /// check by hand (`council.lookupUrl`) — that is where the user goes next, so
   /// it is exposed as it arrived rather than flattened into a message.
   Lookup? get failedLookup => _failedLookup;
+
+  /// The lookup that is in flight, or null when nothing is being waited for.
+  ///
+  /// It carries the council's own figures for the wait — how long it usually
+  /// takes, what stage it has reached, and how many lookups are ahead of this
+  /// one — so the loading screen can say something honest instead of spinning.
+  Lookup? get activeLookup => _activeLookup;
 
   /// Resolve a postcode to its council and required address input.
   Future<void> lookupPostcode(String postcode) async {
@@ -135,6 +147,7 @@ class LookupProvider extends ChangeNotifier {
   Future<void> _submit(Map<String, dynamic> body) async {
     _error = null;
     _pendingLookupId = null;
+    _activeLookup = null;
     _isLoading = true;
     notifyListeners();
     String? submittedId;
@@ -144,6 +157,10 @@ class LookupProvider extends ChangeNotifier {
         idempotencyKey: _newIdempotencyKey(),
       );
       submittedId = lookup.id;
+      // The created lookup is what the user is now waiting for: its council's
+      // expected wait and progress are theirs to see.
+      _activeLookup = lookup;
+      notifyListeners();
       _applySettled(await _pollUntilSettled(lookup));
     } on ApiException catch (e) {
       // The lookup itself exists on the server even when the wait failed
@@ -251,6 +268,10 @@ class LookupProvider extends ChangeNotifier {
       }
       cursor = wait.cursor ?? cursor;
       lookup = wait.lookup;
+      // Every answer from /wait re-states the council's own figures, so the
+      // loading screen can update its wait and progress as the lookup moves.
+      _activeLookup = lookup;
+      notifyListeners();
       if (lookup.isTerminal) break;
       // Respect a Retry-After, but never sleep past the budget: there would be
       // no request left to make on the other side of it.
@@ -268,6 +289,9 @@ class LookupProvider extends ChangeNotifier {
   /// Record a lookup that settled — or one that is still running when the wait
   /// budget ran out.
   void _applySettled(Lookup settled) {
+    // A terminal lookup is nothing to wait for; one that is still running is
+    // kept, because it is still in flight behind a later check.
+    _activeLookup = settled.isTerminal ? null : settled;
     if (settled.status == 'failed') {
       // The whole lookup is kept: the UI needs its real `problem`, the
       // candidate addresses and the council's own link, none of which survive

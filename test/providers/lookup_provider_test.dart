@@ -873,4 +873,94 @@ void main() {
       expect(provider.isLoading, isFalse);
     });
   });
+
+  group('LookupProvider.activeLookup', () {
+    late DateTime now;
+
+    LookupProvider buildProvider(FakeWhenIsBinsApi api) {
+      now = DateTime(2026, 9, 23, 12);
+      return LookupProvider(
+        api: api,
+        delay: (duration) async => now = now.add(duration),
+        now: () => now,
+      );
+    }
+
+    Schedule settledSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'exact',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+      );
+    }
+
+    test('has nothing in flight before anything is submitted', () {
+      final provider = buildProvider(FakeWhenIsBinsApi());
+
+      expect(provider.activeLookup, isNull);
+    });
+
+    test('exposes the in-flight lookup as the poll advances', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'queued',
+            expectedWaitSeconds: 60,
+          ),
+        ]
+        ..waitResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'running',
+            expectedWaitSeconds: 45,
+            queueAhead: 3,
+            progress: LookupProgress(
+              stage: 'council',
+              message: 'Asking your council for your dates',
+            ),
+          ),
+          Lookup(id: 'lookup-1', status: 'done', result: settledSchedule()),
+        ];
+      final provider = buildProvider(api);
+      final seen = <int?>[];
+      provider.addListener(
+        () => seen.add(provider.activeLookup?.expectedWaitSeconds),
+      );
+
+      await provider.selectAddress(_candidate, postcode: 'CB4 2HX');
+
+      expect(seen, contains(60),
+          reason: 'the lookup as created is what the wait starts from');
+      expect(seen, contains(45),
+          reason: 'each answer from /wait updates the figure on screen');
+      expect(provider.activeLookup, isNull,
+          reason: 'nothing is in flight once the lookup settles');
+      expect(provider.schedule?.propertyId, 'p:4c5ee6c2f2c7c959');
+    });
+
+    test('clears the in-flight lookup when it fails', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'failed',
+            problem: 'address_not_found',
+            detail: 'No exact address match.',
+          ),
+        ];
+      final provider = buildProvider(api);
+
+      await provider.selectAddress(_candidate, postcode: 'CB4 2HX');
+
+      expect(provider.failedLookup, isNotNull);
+      expect(provider.activeLookup, isNull);
+    });
+  });
 }
