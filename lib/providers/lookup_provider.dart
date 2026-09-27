@@ -46,6 +46,11 @@ class LookupProvider extends ChangeNotifier {
   bool _isLoading = false;
   ApiException? _error;
   String? _pendingLookupId;
+  Lookup? _failedLookup;
+
+  /// The last address submitted, kept whole so it can be resubmitted with
+  /// `allow_postcode_representative` once the user consents.
+  Map<String, dynamic>? _lastSubmittedAddress;
 
   String? get postcode => _postcode;
   AddressLookup? get addressLookup => _addressLookup;
@@ -57,6 +62,15 @@ class LookupProvider extends ChangeNotifier {
   /// It is kept so a later check can pick the lookup up (see
   /// [continuePendingLookup]) instead of submitting the same address again.
   String? get pendingLookupId => _pendingLookupId;
+
+  /// The lookup that failed, whole.
+  ///
+  /// [error] is all the UI needs to say *that* a lookup failed, but a failed
+  /// lookup also carries the reason (`problem`, e.g. `address_not_found`), the
+  /// addresses the council offered instead (`candidates`), and the link to
+  /// check by hand (`council.lookupUrl`) — that is where the user goes next, so
+  /// it is exposed as it arrived rather than flattened into a message.
+  Lookup? get failedLookup => _failedLookup;
 
   /// Resolve a postcode to its council and required address input.
   Future<void> lookupPostcode(String postcode) async {
@@ -88,7 +102,32 @@ class LookupProvider extends ChangeNotifier {
     required String postcode,
     required Map<String, dynamic> address,
   }) {
+    // Kept so the user can consent to a neighbour's answer later without
+    // retyping the address (see [submitWithPostcodeRepresentative]).
+    _lastSubmittedAddress = address;
     return _submit({'postcode': postcode, ...address});
+  }
+
+  /// Re-submit the last address asking the council to answer for the nearest
+  /// property to the postcode instead of the exact one.
+  ///
+  /// Only worth offering after a `postcode_representative: 'opt_in'` answer
+  /// from `/addresses` and a lookup that failed with `address_not_found`: it is
+  /// the user's consent that decides, so this is a deliberate call and never
+  /// automatic. A no-op before any submission. The body repeats the original
+  /// address fields (so the council sees the same address), adds
+  /// `allow_postcode_representative: true`, and carries its own idempotency
+  /// key — this is new work, not a retry of the first one.
+  Future<void> submitWithPostcodeRepresentative({
+    required String postcode,
+  }) {
+    final address = _lastSubmittedAddress;
+    if (address == null) return Future<void>.value();
+    return _submit({
+      'postcode': postcode,
+      ...address,
+      'allow_postcode_representative': true,
+    });
   }
 
   /// Create a lookup for [body] and wait for it to settle — the journey every
@@ -230,6 +269,10 @@ class LookupProvider extends ChangeNotifier {
   /// budget ran out.
   void _applySettled(Lookup settled) {
     if (settled.status == 'failed') {
+      // The whole lookup is kept: the UI needs its real `problem`, the
+      // candidate addresses and the council's own link, none of which survive
+      // in an ApiException.
+      _failedLookup = settled;
       _error = ApiException(
         statusCode: 0,
         problem: 'lookup_failed',
@@ -239,6 +282,7 @@ class LookupProvider extends ChangeNotifier {
       _pendingLookupId = null;
       return;
     }
+    _failedLookup = null;
     // A partial result beats nothing, and the id is kept for a later check
     // rather than resubmitting a lookup that is merely slow.
     _schedule = settled.result ?? _schedule;

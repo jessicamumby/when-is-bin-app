@@ -731,4 +731,146 @@ void main() {
       expect(provider.isLoading, isFalse);
     });
   });
+
+
+  group('LookupProvider.failedLookup', () {
+    /// A council that offered to answer for a neighbouring property.
+    const failedLookup = Lookup(
+      id: 'lookup-1',
+      status: 'failed',
+      problem: 'address_not_found',
+      detail: 'No exact address match.',
+      council: Council(
+        id: 'cambridge',
+        name: 'Cambridge City Council',
+        lookupUrl: 'https://www.cambridge.gov.uk/bins',
+      ),
+      candidates: [AddressCandidate(id: 'p:1', label: '15 Example Court')],
+    );
+
+    test('exposes the failed lookup with its problem, candidates and link',
+        () async {
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedLookup];
+      final provider = LookupProvider(api: api);
+
+      await provider.submitLookup(
+        postcode: 'CB4 2HX',
+        address: const {'property': '15 Example Court'},
+      );
+
+      expect(provider.failedLookup, isNotNull,
+          reason: 'the UI needs the council link and the alternatives');
+      expect(provider.failedLookup?.problem, 'address_not_found',
+          reason: 'the real reason must survive, not just lookup_failed');
+      expect(provider.failedLookup?.candidates.single.id, 'p:1');
+      expect(provider.failedLookup?.candidates.single.label,
+          '15 Example Court');
+      expect(provider.failedLookup?.council?.lookupUrl,
+          'https://www.cambridge.gov.uk/bins');
+      expect(provider.failedLookup?.detail, 'No exact address match.');
+      expect(provider.error?.problem, 'lookup_failed',
+          reason: 'the summary the UI already reads is unchanged');
+      expect(provider.schedule, isNull);
+    });
+
+    test('clears the failed lookup when a later lookup settles', () async {
+      final api = FakeWhenIsBinsApi()..lookupResponses = [failedLookup];
+      final provider = LookupProvider(api: api);
+      await provider.submitLookup(
+        postcode: 'CB4 2HX',
+        address: const {'property': '15 Example Court'},
+      );
+      expect(provider.failedLookup, isNotNull);
+
+      api.lookupResponses = [
+        Lookup(
+          id: 'lookup-2',
+          status: 'done',
+          result: Schedule(
+            propertyId: 'p:4c5ee6c2f2c7c959',
+            addressMatch: 'postcode_representative',
+            collections: const [
+              Collection(
+                name: 'Black bin',
+                wasteType: 'refuse',
+                dates: ['2026-09-10'],
+              ),
+            ],
+          ),
+        ),
+      ];
+
+      await provider.submitLookup(
+        postcode: 'CB4 2HX',
+        address: const {'property': '15 Example Court'},
+      );
+
+      expect(provider.failedLookup, isNull,
+          reason: 'a stale failure must not shadow a fresh schedule');
+      expect(provider.schedule?.addressMatch, 'postcode_representative');
+    });
+  });
+
+  group('LookupProvider.submitWithPostcodeRepresentative', () {
+    Schedule neighbourSchedule() {
+      return const Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'postcode_representative',
+        collections: [
+          Collection(
+            name: 'Black bin',
+            wasteType: 'refuse',
+            dates: ['2026-09-10'],
+          ),
+        ],
+      );
+    }
+
+    test('resubmits the same address with consent and a fresh key', () async {
+      final api = FakeWhenIsBinsApi()
+        ..lookupResponses = [
+          const Lookup(
+            id: 'lookup-1',
+            status: 'failed',
+            problem: 'address_not_found',
+            detail: 'No exact address match.',
+          ),
+        ];
+      final provider = LookupProvider(api: api);
+      await provider.submitLookup(
+        postcode: 'EH14 7AL',
+        address: const {'street': 'A70--Glenbrook Rd To B7031'},
+      );
+      final firstKey = api.lastIdempotencyKey;
+
+      api.lookupResponses = [
+        Lookup(id: 'lookup-2', status: 'done', result: neighbourSchedule()),
+      ];
+      await provider.submitWithPostcodeRepresentative(postcode: 'EH14 7AL');
+
+      expect(api.lastLookupBody, {
+        'postcode': 'EH14 7AL',
+        'street': 'A70--Glenbrook Rd To B7031',
+        'allow_postcode_representative': true,
+      }, reason: 'the same address, plus the consent the user gave');
+      expect(api.createLookupCalls, 2);
+      expect(api.lastIdempotencyKey, isNot(firstKey),
+          reason: 'a resubmit is new work, so it needs its own key');
+      expect(provider.schedule?.addressMatch, 'postcode_representative');
+      expect(provider.error, isNull);
+      expect(provider.failedLookup, isNull);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('does nothing when no address has been submitted', () async {
+      final api = FakeWhenIsBinsApi();
+      final provider = LookupProvider(api: api);
+
+      await provider.submitWithPostcodeRepresentative(postcode: 'EH14 7AL');
+
+      expect(api.createLookupCalls, 0);
+      expect(api.waitCallCount, 0);
+      expect(provider.isLoading, isFalse);
+    });
+  });
 }
