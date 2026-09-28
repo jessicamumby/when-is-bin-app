@@ -326,6 +326,49 @@ void main() {
         expect(settings.isOnboarded, isTrue);
       },
     );
+
+    testWidgets('completes onboarding without waiting for reminders to be '
+        'scheduled', (tester) async {
+      // In the release build the plugin's zonedSchedule failed on the platform
+      // side; a scheduling call that stalls must not keep the user on
+      // onboarding, even for the length of the sync timeout.
+      final settings = await makeSettings();
+      final lookup = await lookupWithSchedule();
+      final notifications = FakeNotificationService()..hangSchedule = true;
+
+      await tester.pumpWidget(buildApp(lookup, settings, notifications));
+
+      await tester.tap(find.text('Turn on reminders'));
+      await tester.pump();
+
+      expect(notifications.scheduleCount, 1);
+      expect(settings.isOnboarded, isTrue);
+
+      // Let the bounded sync time out so no timer outlives the test.
+      await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets('shows progress and ignores repeat taps while the permission '
+        'dialog is open', (tester) async {
+      final settings = await makeSettings();
+      final lookup = await lookupWithSchedule();
+      final notifications = FakeNotificationService()
+        ..hangPermissionRequest = true;
+
+      await tester.pumpWidget(buildApp(lookup, settings, notifications));
+
+      await tester.tap(find.text('Turn on reminders'));
+      await tester.pump();
+
+      expect(find.text('Turn on reminders'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await tester.tap(find.byType(ElevatedButton), warnIfMissed: false);
+      await tester.pump();
+      expect(notifications.requestPermissionCount, 1);
+
+      await tester.pump(const Duration(seconds: 10));
+      expect(settings.isOnboarded, isTrue);
+    });
   });
 
   group('Onboarding rate limited', () {

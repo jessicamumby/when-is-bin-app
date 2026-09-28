@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -30,6 +32,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   /// the app to wait a specific time.
   String? _retryAfterCopy;
   ReminderTime _chosenTime = ReminderTime.evening;
+
+  /// True from the tap on "Turn on reminders" until onboarding completes. The
+  /// OS permission dialog and the platform calls behind it take a moment, and
+  /// a button that stays live and silent reads as a frozen app — and invites
+  /// a second tap that races the first permission request.
+  bool _enablingReminders = false;
 
   @override
   void dispose() {
@@ -81,29 +89,43 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Future<void> _enableReminders() async {
+    if (_enablingReminders) return;
+    setState(() => _enablingReminders = true);
+
     final settings = context.read<SettingsProvider>();
     final reminderSync = context.read<ReminderSyncService>();
     final lookup = context.read<LookupProvider>();
 
-    await settings.setReminderTime(_chosenTime);
-    await settings.setRemindersEnabled(true);
-
-    // Permission and scheduling are best-effort. A platform failure — a
-    // permission dialog that never returns a verdict, or a zonedSchedule that
-    // errors or hangs — must never strand the user on onboarding. They can
-    // re-enable reminders from Settings later.
     try {
+      await settings.setReminderTime(_chosenTime);
+      await settings.setRemindersEnabled(true);
+
+      // Permission is best-effort and bounded by ReminderSyncService: a
+      // dialog that never returns a verdict is treated as denied.
       await reminderSync.requestPermissions();
-      await reminderSync.sync(
-        schedule: lookup.schedule,
-        enabled: true,
-        reminderTime: _chosenTime,
+
+      // Scheduling is not the user's to wait for. It runs after onboarding
+      // completes, so a platform call that errors or stalls in a release
+      // build can never strand the user here; the launch re-sync and the
+      // Settings toggle retry it.
+      unawaited(
+        reminderSync
+            .sync(
+              schedule: lookup.schedule,
+              enabled: true,
+              reminderTime: _chosenTime,
+            )
+            .catchError((Object _) {
+              debugPrint('Reminder scheduling failed after onboarding.');
+              return const <Reminder>[];
+            }),
       );
     } catch (_) {
       debugPrint('Reminder setup failed; continuing onboarding.');
+    } finally {
+      // Whatever happened above, the user has finished onboarding.
+      await settings.markOnboarded();
     }
-
-    await settings.markOnboarded();
   }
 
   @override
@@ -235,8 +257,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: _enableReminders,
-            child: const Text('Turn on reminders'),
+            onPressed: _enablingReminders ? null : _enableReminders,
+            child: _enablingReminders
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.white,
+                    ),
+                  )
+                : const Text('Turn on reminders'),
           ),
         ),
       ],
