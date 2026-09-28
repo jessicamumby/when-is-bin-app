@@ -48,6 +48,12 @@ android {
 
     buildTypes {
         release {
+            // R8 runs on release builds only; these rules keep what the
+            // notification plugin reflects on (see proguard-rules.pro).
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             } else {

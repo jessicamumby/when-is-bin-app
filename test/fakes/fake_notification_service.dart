@@ -18,6 +18,10 @@ class FakeNotificationService extends NotificationService {
   /// plugin's zonedSchedule erroring) that must not strand onboarding.
   bool throwOnSchedule = false;
 
+  /// When true, [scheduleReminders] never resolves — a platform scheduling
+  /// call that stalls, which onboarding must not wait on.
+  bool hangSchedule = false;
+
   @override
   Future<bool> requestPermissions() {
     requestPermissionCount++;
@@ -33,6 +37,9 @@ class FakeNotificationService extends NotificationService {
     lastReminders = reminders;
     if (throwOnSchedule) {
       throw StateError('zonedSchedule failed');
+    }
+    if (hangSchedule) {
+      return Completer<void>().future;
     }
     return Future.value();
   }

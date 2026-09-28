@@ -112,6 +112,18 @@ void main() {
       );
     });
 
+    test('keeps the notification plugin working under R8', () {
+      // Release builds are shrunk by R8 and debug builds are not. Without these
+      // rules Gson's TypeToken lost its generic signature and every
+      // zonedSchedule call failed in production with "Missing type
+      // parameter" — invisible in a debug build.
+      expect(gradle, contains('proguard-rules.pro'));
+      final rules = _read('android/app/proguard-rules.pro');
+      expect(rules, contains('-keepattributes Signature'));
+      expect(rules, contains('com.google.gson.reflect.TypeToken'));
+      expect(rules, contains('-keep class com.dexterous.** { *; }'));
+    });
+
     test('keeps the saved address out of cloud backups', () {
       // The address and postcode are the user's personal data; auto-backup is
       // on by default and would copy them off the device.
