@@ -42,15 +42,15 @@ When Is Bin App tells you when to put your bins out. Enter your postcode, pick
 your address, done: you get the next few collection dates for your property,
 with the bins listed by name and colour.
 
-Set a reminder and the app notifies you the night before (or the morning of)
-collection — whichever you prefer. You can also add the dates to your calendar
+Set a reminder and the app notifies you the day before collection, at 9am or
+7pm — whichever you prefer. You can also add the dates to your calendar
 by subscribing to your property's public .ics feed, and the app remembers your
 address so your bin days are one tap away next time.
 
 WHAT IT DOES
 • Postcode and address lookup, so you see your own council's schedule
 • Bin-by-bin collection dates, listed by name and colour
-• A local reminder the evening before, or the morning of, collection
+• A local reminder the day before collection, morning or evening
 • Calendar subscription (.ics) for the same dates
 • One saved address, kept on your device
 
@@ -104,15 +104,15 @@ Enter your postcode, pick your address, and get a reminder the night before coll
 When Is Bin App tells you when to put your bins out.
 
 Enter your postcode, pick your address and see your next collection dates, bin
-by bin. Set a reminder and the app notifies you the night before collection, or
-on the morning itself. You can also add your bin days to your calendar with your
+by bin. Set a reminder and the app notifies you the day before collection, at
+9am or 7pm. You can also add your bin days to your calendar with your
 property's public .ics feed, and the app remembers your address so your dates
 are one tap away next time.
 
 WHAT IT DOES
 • Postcode and address lookup, so you see your own council's schedule
 • Bin-by-bin collection dates, listed by name and colour
-• A local reminder the evening before, or the morning of, collection
+• A local reminder the day before collection, morning or evening
 • Calendar subscription (.ics) for the same dates
 • One saved address, kept on your device
 
