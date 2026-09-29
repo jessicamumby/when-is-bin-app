@@ -136,4 +136,9 @@ accessibility or privacy questions about the data go to hello@whenisbins.com.
 - **Display name** — `When Is Bin App`, matching `CFBundleDisplayName` in `ios/Runner/Info.plist`.
 - **Keywords (max 100 characters)** — `bins,bin day,recycling,collection,reminder,refuse,postcode,council,calendar,kerbside,waste,garden`
 - **Support URL** — a page that states the attribution and both contact routes; the Privacy URL should be `https://whenisbins.com/privacy` (the same link the About screen opens).
-- **App Privacy** — declare the postcode/address as data linked to app functionality; no tracking, no third-party advertising.
+- **App Privacy** — must match `ios/Runner/PrivacyInfo.xcprivacy`. The v1.0 submission was rejected under Guideline 5.1.2(i) (29 Sept 2026) because the label said the address was used to track, and the app has no App Tracking Transparency prompt. Answer exactly:
+  - Data collected: **Contact Info → Physical Address** only.
+  - Purpose: **App Functionality** only.
+  - Linked to the user's identity: **No** (there are no accounts; the address goes to the WhenIsBins API and is cached on the device).
+  - Used for tracking: **No**. Never tick this: the app has no ads, analytics or data brokers, and ticking it makes ATT mandatory.
+  - Editing the label needs the Account Holder or Admin role. Publish it before resubmitting.
