@@ -42,15 +42,15 @@ When Is Bin App tells you when to put your bins out. Enter your postcode, pick
 your address, done: you get the next few collection dates for your property,
 with the bins listed by name and colour.
 
-Set a reminder and the app notifies you the night before (or the morning of)
-collection — whichever you prefer. You can also add the dates to your calendar
+Set a reminder and the app notifies you the day before collection, at 9am or
+7pm — whichever you prefer. You can also add the dates to your calendar
 by subscribing to your property's public .ics feed, and the app remembers your
 address so your bin days are one tap away next time.
 
 WHAT IT DOES
 • Postcode and address lookup, so you see your own council's schedule
 • Bin-by-bin collection dates, listed by name and colour
-• A local reminder the evening before, or the morning of, collection
+• A local reminder the day before collection, morning or evening
 • Calendar subscription (.ics) for the same dates
 • One saved address, kept on your device
 
@@ -104,15 +104,15 @@ Enter your postcode, pick your address, and get a reminder the night before coll
 When Is Bin App tells you when to put your bins out.
 
 Enter your postcode, pick your address and see your next collection dates, bin
-by bin. Set a reminder and the app notifies you the night before collection, or
-on the morning itself. You can also add your bin days to your calendar with your
+by bin. Set a reminder and the app notifies you the day before collection, at
+9am or 7pm. You can also add your bin days to your calendar with your
 property's public .ics feed, and the app remembers your address so your dates
 are one tap away next time.
 
 WHAT IT DOES
 • Postcode and address lookup, so you see your own council's schedule
 • Bin-by-bin collection dates, listed by name and colour
-• A local reminder the evening before, or the morning of, collection
+• A local reminder the day before collection, morning or evening
 • Calendar subscription (.ics) for the same dates
 • One saved address, kept on your device
 
@@ -136,4 +136,9 @@ accessibility or privacy questions about the data go to hello@whenisbins.com.
 - **Display name** — `When Is Bin App`, matching `CFBundleDisplayName` in `ios/Runner/Info.plist`.
 - **Keywords (max 100 characters)** — `bins,bin day,recycling,collection,reminder,refuse,postcode,council,calendar,kerbside,waste,garden`
 - **Support URL** — a page that states the attribution and both contact routes; the Privacy URL should be `https://whenisbins.com/privacy` (the same link the About screen opens).
-- **App Privacy** — declare the postcode/address as data linked to app functionality; no tracking, no third-party advertising.
+- **App Privacy** — must match `ios/Runner/PrivacyInfo.xcprivacy`. The v1.0 submission was rejected under Guideline 5.1.2(i) (29 Sept 2026) because the label said the address was used to track, and the app has no App Tracking Transparency prompt. Answer exactly:
+  - Data collected: **Contact Info → Physical Address** only.
+  - Purpose: **App Functionality** only.
+  - Linked to the user's identity: **No** (there are no accounts; the address goes to the WhenIsBins API and is cached on the device).
+  - Used for tracking: **No**. Never tick this: the app has no ads, analytics or data brokers, and ticking it makes ATT mandatory.
+  - Editing the label needs the Account Holder or Admin role. Publish it before resubmitting.
