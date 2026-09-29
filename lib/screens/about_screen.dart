@@ -49,7 +49,7 @@ class AboutScreen extends StatelessWidget {
           const SizedBox(height: 20),
           _paragraph([
             const TextSpan(
-              text: 'When Is Bin App is an independent app by ',
+              text: 'When Is Bins is an independent app by ',
             ),
             _link('Jessica Mumby', linkedInUrl),
             const TextSpan(

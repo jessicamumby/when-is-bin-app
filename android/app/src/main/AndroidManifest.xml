@@ -11,7 +11,7 @@
          is what lets the boot receiver below re-arm them after a restart. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
-        android:label="When Is Bin App"
+        android:label="When Is Bins"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false">

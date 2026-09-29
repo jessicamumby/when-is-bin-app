@@ -130,8 +130,8 @@ void main() {
       expect(manifest, contains('android:allowBackup="false"'));
     });
 
-    test('is labelled "When Is Bin App"', () {
-      expect(manifest, contains('android:label="When Is Bin App"'));
+    test('is labelled "When Is Bins"', () {
+      expect(manifest, contains('android:label="When Is Bins"'));
     });
 
     test('signs releases from the upload keystore, with a loud fallback', () {
@@ -241,8 +241,8 @@ void main() {
       expect(manifest, contains('NSPrivacyCollectedDataTypeTracking'));
     });
 
-    test('is displayed as "When Is Bin App"', () {
-      expect(plist, contains('<string>When Is Bin App</string>'));
+    test('is displayed as "When Is Bins"', () {
+      expect(plist, contains('<string>When Is Bins</string>'));
     });
   });
 
