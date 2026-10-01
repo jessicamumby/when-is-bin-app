@@ -26,6 +26,10 @@ class FakeNotificationScheduler implements NotificationScheduler {
   /// When true, [scheduleReminders] never resolves — a hung zonedSchedule.
   bool hangOnSchedule = false;
 
+  /// When set, [scheduleReminders] only lands its reminders once this
+  /// completes — a platform call still in flight.
+  Completer<void>? holdSchedule;
+
   @override
   Future<bool> requestPermissions() {
     permissionRequests++;
@@ -36,13 +40,14 @@ class FakeNotificationScheduler implements NotificationScheduler {
   }
 
   @override
-  Future<void> scheduleReminders(List<Reminder> reminders) {
+  Future<void> scheduleReminders(List<Reminder> reminders) async {
     scheduled.add(reminders);
-    pending = authorised ? List.of(reminders) : const [];
     if (hangOnSchedule) {
       return Completer<void>().future;
     }
-    return Future.value();
+    final hold = holdSchedule;
+    if (hold != null) await hold.future;
+    pending = authorised ? List.of(reminders) : const [];
   }
 
   @override

@@ -22,6 +22,11 @@ class ReminderSyncService {
   final NotificationScheduler _notifications;
   final DateTime Function() _now;
 
+  /// The sync currently being applied. Each sync cancels and re-adds every
+  /// reminder, so two running at once could interleave and leave the earlier
+  /// one's reminders behind; they are queued so the latest intent always wins.
+  Future<void> _inFlight = Future.value();
+
   /// How long to wait for the OS permission verdict before treating the
   /// request as denied. An Android activity recreation mid-request can orphan
   /// the permission callback so its future never resolves; an unbounded wait
@@ -56,6 +61,27 @@ class ReminderSyncService {
   ///
   /// Returns the reminders now scheduled (empty when everything was cancelled).
   Future<List<Reminder>> sync({
+    required Schedule? schedule,
+    required bool enabled,
+    required ReminderTime reminderTime,
+  }) {
+    // Bounded like the scheduling itself: a platform call that never answers
+    // must not hold up every later sync.
+    final previous = _inFlight
+        .timeout(syncTimeout * 2)
+        .catchError((Object _) {});
+    final applied = previous.then(
+      (_) => _apply(
+        schedule: schedule,
+        enabled: enabled,
+        reminderTime: reminderTime,
+      ),
+    );
+    _inFlight = applied.then((_) {}, onError: (Object _) {});
+    return applied;
+  }
+
+  Future<List<Reminder>> _apply({
     required Schedule? schedule,
     required bool enabled,
     required ReminderTime reminderTime,

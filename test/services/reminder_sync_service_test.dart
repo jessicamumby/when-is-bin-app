@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:when_is_bin_app/models/schedule.dart';
@@ -336,5 +338,33 @@ void main() {
         expect(reminders, hasLength(1));
       },
     );
+  });
+
+  group('ReminderSyncService ordering', () {
+    test('a sync that starts mid-way through another applies after it', () async {
+      // Removing the address while its reminders are still being scheduled
+      // must leave nothing behind: the later intent wins.
+      final notifications = FakeNotificationScheduler()
+        ..holdSchedule = Completer<void>();
+      final service = ReminderSyncService(
+        notifications: notifications,
+        now: () => now,
+      );
+
+      final first = service.sync(
+        schedule: scheduleWith([collection('Black bin', ['2026-09-10'])]),
+        enabled: true,
+        reminderTime: ReminderTime.evening,
+      );
+      final second = service.sync(
+        schedule: null,
+        enabled: true,
+        reminderTime: ReminderTime.evening,
+      );
+      notifications.holdSchedule!.complete();
+      await Future.wait([first, second]);
+
+      expect(notifications.pending, isEmpty);
+    });
   });
 }

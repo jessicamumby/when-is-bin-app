@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -123,10 +124,19 @@ class WhenIsBinApp extends StatefulWidget {
 
 class _WhenIsBinAppState extends State<WhenIsBinApp>
     with WidgetsBindingObserver {
+  late final SettingsProvider _settings;
+
+  /// What the reminders on the device were last derived from.
+  late String _remindersSyncedFor;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // main() has already synced the reminders for the settings as they stand.
+    _settings = context.read<SettingsProvider>();
+    _remindersSyncedFor = _reminderInputs();
+    _settings.addListener(_onSettingsChanged);
     // A saved address carries a persisted schedule, so hydrate it straight
     // away — whichever screen the app opens on needs it, not just the
     // search screen.
@@ -140,8 +150,49 @@ class _WhenIsBinAppState extends State<WhenIsBinApp>
 
   @override
   void dispose() {
+    _settings.removeListener(_onSettingsChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Everything the reminders are derived from, as one comparable value.
+  String _reminderInputs() {
+    final schedule = _settings.savedSchedule;
+    return jsonEncode({
+      'enabled': _settings.remindersEnabled,
+      'time': _settings.reminderTime.name,
+      'provisional': schedule?.provisional,
+      'collections': schedule?.collections.map((c) => c.toJson()).toList(),
+    });
+  }
+
+  /// Keep the reminders on the device in step with what is saved.
+  ///
+  /// Removing the address, saving a new one, changing the reminder time and
+  /// flipping the switch each happen on a different screen; syncing here
+  /// means none of them can leave the device reminding about an address the
+  /// user has removed, or silent for the one they have just set.
+  void _onSettingsChanged() {
+    final inputs = _reminderInputs();
+    if (inputs == _remindersSyncedFor) return;
+    _remindersSyncedFor = inputs;
+    _syncReminders('Reminder re-sync failed after a settings change.');
+  }
+
+  void _syncReminders(String failure) {
+    unawaited(
+      context
+          .read<ReminderSyncService>()
+          .sync(
+            schedule: _settings.savedSchedule,
+            enabled: _settings.remindersEnabled,
+            reminderTime: _settings.reminderTime,
+          )
+          .catchError((Object _) {
+            debugPrint(failure);
+            return const <Reminder>[];
+          }),
+    );
   }
 
   /// Re-derive the reminders whenever the app comes back to the foreground.
@@ -156,20 +207,7 @@ class _WhenIsBinAppState extends State<WhenIsBinApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
-    final settings = context.read<SettingsProvider>();
-    final reminderSync = context.read<ReminderSyncService>();
-    unawaited(
-      reminderSync
-          .sync(
-            schedule: settings.savedSchedule,
-            enabled: settings.remindersEnabled,
-            reminderTime: settings.reminderTime,
-          )
-          .catchError((Object _) {
-            debugPrint('Reminder re-sync failed on resume.');
-            return const <Reminder>[];
-          }),
-    );
+    _syncReminders('Reminder re-sync failed on resume.');
   }
 
   @override
