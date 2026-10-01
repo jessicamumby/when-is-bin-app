@@ -4,11 +4,31 @@ import 'package:provider/provider.dart';
 import '../core/theme.dart';
 import '../providers/settings_provider.dart';
 import '../services/reminder_scheduler.dart';
+import '../services/reminder_sync_service.dart';
 import 'about_screen.dart';
 
 /// Settings: reminder time choice and saved-address management.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+
+  /// Save the new reminder time and move the reminders already on the device
+  /// to it. They were built for the old time, so without a re-sync the user
+  /// keeps being reminded at the time they just changed away from.
+  Future<void> _setReminderTime(BuildContext context, ReminderTime time) async {
+    final settings = context.read<SettingsProvider>();
+    final reminderSync = context.read<ReminderSyncService>();
+    await settings.setReminderTime(time);
+    try {
+      await reminderSync.sync(
+        schedule: settings.savedSchedule,
+        enabled: settings.remindersEnabled,
+        reminderTime: time,
+      );
+    } catch (_) {
+      // The next launch or return to the app re-syncs from the saved time.
+      debugPrint('Reminder re-sync failed after changing the time.');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +55,7 @@ class SettingsScreen extends StatelessWidget {
           RadioGroup<ReminderTime>(
             groupValue: settings.reminderTime,
             onChanged: (value) {
-              if (value != null) settings.setReminderTime(value);
+              if (value != null) _setReminderTime(context, value);
             },
             child: Column(
               children: [
