@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:when_is_bin_app/core/theme.dart';
@@ -31,7 +32,12 @@ void main() {
       Collection(
         name: 'Black bin',
         wasteType: 'rubbish',
-        dates: ['2026-10-01'],
+        // Always a week out: a fixed date eventually passes and leaves
+        // nothing to remind about.
+        dates: [
+          DateFormat('yyyy-MM-dd')
+              .format(DateTime.now().add(const Duration(days: 7))),
+        ],
       ),
     ],
   );

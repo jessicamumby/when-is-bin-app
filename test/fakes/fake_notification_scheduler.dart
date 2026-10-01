@@ -11,6 +11,14 @@ class FakeNotificationScheduler implements NotificationScheduler {
   int permissionRequests = 0;
   bool permissionGranted = true;
 
+  /// Whether the OS will actually keep what is scheduled. iOS silently drops
+  /// reminders added before the user has allowed notifications: the add call
+  /// still succeeds, but nothing is left pending.
+  bool authorised = true;
+
+  /// The reminders the OS is holding, i.e. the ones that will actually fire.
+  List<Reminder> pending = const [];
+
   /// When true, [requestPermissions] never resolves — the orphaned Android
   /// permission callback.
   bool hangPermissionRequest = false;
@@ -30,6 +38,7 @@ class FakeNotificationScheduler implements NotificationScheduler {
   @override
   Future<void> scheduleReminders(List<Reminder> reminders) {
     scheduled.add(reminders);
+    pending = authorised ? List.of(reminders) : const [];
     if (hangOnSchedule) {
       return Completer<void>().future;
     }
@@ -39,5 +48,6 @@ class FakeNotificationScheduler implements NotificationScheduler {
   @override
   Future<void> cancelAll() async {
     cancelAllCalls++;
+    pending = const [];
   }
 }

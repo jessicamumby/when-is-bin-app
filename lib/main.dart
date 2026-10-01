@@ -14,6 +14,7 @@ import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'services/notification_service.dart';
+import 'services/reminder_scheduler.dart';
 import 'services/reminder_sync_service.dart';
 import 'services/schedule_refresh_service.dart';
 import 'services/timeout_http_client.dart';
@@ -120,10 +121,12 @@ class WhenIsBinApp extends StatefulWidget {
   State<WhenIsBinApp> createState() => _WhenIsBinAppState();
 }
 
-class _WhenIsBinAppState extends State<WhenIsBinApp> {
+class _WhenIsBinAppState extends State<WhenIsBinApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // A saved address carries a persisted schedule, so hydrate it straight
     // away — whichever screen the app opens on needs it, not just the
     // search screen.
@@ -133,6 +136,40 @@ class _WhenIsBinAppState extends State<WhenIsBinApp> {
       if (settings.savedAddress == null) return;
       context.read<LookupProvider>().restoreSchedule(settings.savedSchedule);
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Re-derive the reminders whenever the app comes back to the foreground.
+  ///
+  /// iOS silently drops reminders scheduled before the user has allowed
+  /// notifications, and onboarding stops waiting for the permission prompt
+  /// after a few seconds, so a user who reads the prompt before tapping Allow
+  /// ends up with none. Answering the prompt (or allowing notifications later
+  /// in the Settings app) resumes the app, and iOS rarely cold-starts a
+  /// suspended app, so this is the moment to put the reminders back rather
+  /// than waiting for the next launch.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final settings = context.read<SettingsProvider>();
+    final reminderSync = context.read<ReminderSyncService>();
+    unawaited(
+      reminderSync
+          .sync(
+            schedule: settings.savedSchedule,
+            enabled: settings.remindersEnabled,
+            reminderTime: settings.reminderTime,
+          )
+          .catchError((Object _) {
+            debugPrint('Reminder re-sync failed on resume.');
+            return const <Reminder>[];
+          }),
+    );
   }
 
   @override
