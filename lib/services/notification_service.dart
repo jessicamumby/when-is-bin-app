@@ -39,26 +39,21 @@ class NotificationService implements NotificationScheduler {
   static const _channelId = 'bin_reminders';
   static const _channelName = 'Bin collection reminders';
 
-  /// The zone reminders are built in when the device's own zone cannot be
-  /// resolved. The service only covers UK councils, so Europe/London is correct
-  /// for every household it serves.
-  static const fallbackTimeZone = 'Europe/London';
+  /// The zone every reminder is built in. The service only covers UK councils,
+  /// so a bin always goes out on UK time.
+  static const ukTimeZone = 'Europe/London';
 
-  /// Point `tz.local` at the device's zone so reminders fire at the right
-  /// wall-clock time.
+  /// Point `tz.local` at the UK zone so reminders fire at the right wall-clock
+  /// time, whichever side of a clock change they were scheduled from.
   ///
   /// The `timezone` package defaults `tz.local` to UTC, which would fire every
-  /// reminder an hour late through BST. `DateTime.timeZoneName` only yields an
-  /// abbreviation ("BST", "GMT"), not an IANA name, so the lookup is
-  /// best-effort and falls back to [fallbackTimeZone].
-  static void configureLocalTimeZone({String? zoneName}) {
+  /// reminder an hour late through BST. The device's own zone is no help:
+  /// `DateTime.timeZoneName` only yields an abbreviation, and the winter one,
+  /// "GMT", names a fixed zone with no daylight saving, so a summer reminder
+  /// scheduled in winter would fire at 8pm instead of 7pm.
+  static void configureLocalTimeZone() {
     tzdata.initializeTimeZones();
-    final name = zoneName ?? DateTime.now().timeZoneName;
-    try {
-      tz.setLocalLocation(tz.getLocation(name));
-    } on tz.LocationNotFoundException {
-      tz.setLocalLocation(tz.getLocation(fallbackTimeZone));
-    }
+    tz.setLocalLocation(tz.getLocation(ukTimeZone));
   }
 
   /// The instant a wall-clock [local] time refers to, in the configured zone.
