@@ -7,12 +7,16 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:when_is_bin_app/core/theme.dart';
 import 'package:when_is_bin_app/main.dart';
+import 'package:when_is_bin_app/models/schedule.dart';
 import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/home_screen.dart';
 import 'package:when_is_bin_app/screens/schedule_screen.dart';
+import 'package:when_is_bin_app/services/reminder_scheduler.dart';
+import 'package:when_is_bin_app/services/reminder_sync_service.dart';
 
 import 'fakes/fake_api.dart';
+import 'fakes/fake_notification_scheduler.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -50,11 +54,19 @@ void main() {
     });
   }
 
-  Future<Widget> app({Map<String, Object>? prefs}) async {
+  Future<Widget> app({
+    Map<String, Object>? prefs,
+    ReminderSyncService? reminderSync,
+  }) async {
     SharedPreferences.setMockInitialValues(prefs ?? {});
     final settings = SettingsProvider(await SharedPreferences.getInstance());
     return MultiProvider(
       providers: [
+        Provider<ReminderSyncService>.value(
+          value:
+              reminderSync ??
+              ReminderSyncService(notifications: FakeNotificationScheduler()),
+        ),
         ChangeNotifierProvider(
           create: (_) => LookupProvider(api: FakeWhenIsBinsApi()),
         ),
@@ -115,6 +127,188 @@ void main() {
         expect(find.text('Find your bin day'), findsOneWidget);
       },
     );
+  });
+
+  group('reminders follow the app back to the foreground', () {
+    // iOS drops reminders scheduled before the user has answered the
+    // notification prompt, and onboarding stops waiting for that answer after
+    // a few seconds. Returning to the foreground (which is also what answering
+    // the prompt does) must put the reminders back.
+    testWidgets(
+      'reschedules reminders iOS dropped while the permission prompt was open',
+      (tester) async {
+        final notifications = FakeNotificationScheduler()..authorised = false;
+        final reminderSync = ReminderSyncService(notifications: notifications);
+        await tester.pumpWidget(
+          await app(
+            reminderSync: reminderSync,
+            prefs: {
+              'onboarded': true,
+              'reminders_enabled': true,
+              'saved_address': '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+              'saved_postcode': 'CB4 2HX',
+              'saved_property_id': 'p:4c5ee6c2f2c7c959',
+              'saved_schedule': savedScheduleJson(),
+            },
+          ),
+        );
+        await tester.pump();
+
+        // Onboarding schedules while the prompt is still up: iOS keeps none.
+        final settings = tester
+            .element(find.byType(ScheduleScreen))
+            .read<SettingsProvider>();
+        await reminderSync.sync(
+          schedule: settings.savedSchedule,
+          enabled: true,
+          reminderTime: settings.reminderTime,
+        );
+        expect(notifications.pending, isEmpty);
+
+        // The user taps Allow; the prompt closing hands focus back to the app.
+        notifications.authorised = true;
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump();
+
+        expect(notifications.pending, hasLength(1));
+        expect(notifications.pending.single.binNames, ['Black bin']);
+      },
+    );
+
+    testWidgets('clears reminders on resume when they are switched off', (
+      tester,
+    ) async {
+      final notifications = FakeNotificationScheduler()..pending = const [];
+      await tester.pumpWidget(
+        await app(
+          reminderSync: ReminderSyncService(notifications: notifications),
+          prefs: {
+            'onboarded': true,
+            'reminders_enabled': false,
+            'saved_address': '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+            'saved_postcode': 'CB4 2HX',
+            'saved_property_id': 'p:4c5ee6c2f2c7c959',
+            'saved_schedule': savedScheduleJson(),
+          },
+        ),
+      );
+      await tester.pump();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(notifications.scheduled, isEmpty);
+      expect(notifications.cancelAllCalls, 1);
+    });
+  });
+
+  group('reminders follow the saved address and time', () {
+    final savedPrefs = <String, Object>{
+      'onboarded': true,
+      'reminders_enabled': true,
+      'saved_address': '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+      'saved_postcode': 'CB4 2HX',
+      'saved_property_id': 'p:4c5ee6c2f2c7c959',
+      'saved_schedule': savedScheduleJson(),
+    };
+
+    final newSchedule = Schedule(
+      propertyId: 'p:new-home',
+      addressMatch: 'exact',
+      collections: [
+        Collection(
+          name: 'Blue bin',
+          wasteType: 'recycling',
+          dates: [nextCollectionIso],
+        ),
+      ],
+    );
+
+    /// Pumps the app with its launch-time reminders already on the device.
+    Future<(FakeNotificationScheduler, SettingsProvider)> pumpApp(
+      WidgetTester tester, {
+      Map<String, Object>? prefs,
+    }) async {
+      final notifications = FakeNotificationScheduler();
+      final reminderSync = ReminderSyncService(notifications: notifications);
+      await tester.pumpWidget(
+        await app(prefs: prefs ?? savedPrefs, reminderSync: reminderSync),
+      );
+      await tester.pump();
+      final settings = tester
+          .element(find.byType(WhenIsBinApp))
+          .read<SettingsProvider>();
+      await reminderSync.sync(
+        schedule: settings.savedSchedule,
+        enabled: settings.remindersEnabled,
+        reminderTime: settings.reminderTime,
+      );
+      return (notifications, settings);
+    }
+
+    testWidgets('removing the saved address cancels its reminders', (
+      tester,
+    ) async {
+      final (notifications, settings) = await pumpApp(tester);
+      expect(notifications.pending, hasLength(1));
+
+      await settings.clearSavedAddress();
+      await tester.pump();
+
+      expect(notifications.pending, isEmpty);
+    });
+
+    testWidgets('a new address after removing the old one gets reminders', (
+      tester,
+    ) async {
+      final (notifications, settings) = await pumpApp(tester);
+      await settings.clearSavedAddress();
+      await tester.pump();
+
+      // What the address screens do once a lookup resolves.
+      await settings.saveAddress(
+        address: '1 NEW ROAD, CAMBRIDGE, CB1 1AA',
+        postcode: 'CB1 1AA',
+        propertyId: 'p:new-home',
+      );
+      await settings.saveSchedule(newSchedule);
+      await tester.pump();
+
+      expect(notifications.pending, hasLength(1));
+      expect(notifications.pending.single.binNames, ['Blue bin']);
+    });
+
+    testWidgets('a new address gets no reminders while they are off', (
+      tester,
+    ) async {
+      final (notifications, settings) = await pumpApp(
+        tester,
+        prefs: {...savedPrefs, 'reminders_enabled': false},
+      );
+
+      await settings.saveSchedule(newSchedule);
+      await tester.pump();
+
+      expect(notifications.pending, isEmpty);
+    });
+
+    testWidgets('changing the reminder time moves the reminders', (
+      tester,
+    ) async {
+      final (notifications, settings) = await pumpApp(tester);
+      expect(notifications.pending.single.fireAt.hour, 19);
+
+      await settings.setReminderTime(ReminderTime.morning);
+      await tester.pump();
+
+      expect(notifications.pending.single.fireAt.hour, 9);
+    });
   });
 
   group('stays light whatever the device theme', () {

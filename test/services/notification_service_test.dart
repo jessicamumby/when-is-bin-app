@@ -126,7 +126,7 @@ void main() {
 
   group('NotificationService time zone', () {
     test('builds the fire time in the configured local zone', () {
-      NotificationService.configureLocalTimeZone(zoneName: 'Europe/London');
+      NotificationService.configureLocalTimeZone();
 
       final fireAt =
           NotificationService.toTZDateTime(DateTime(2026, 7, 15, 19, 0));
@@ -140,7 +140,7 @@ void main() {
     });
 
     test('keeps the reminder at the same wall-clock hour across DST', () {
-      NotificationService.configureLocalTimeZone(zoneName: 'Europe/London');
+      NotificationService.configureLocalTimeZone();
 
       // UK clocks go back on 2026-10-25, so this date is GMT.
       final fireAt =
@@ -150,12 +150,23 @@ void main() {
       expect(fireAt.timeZoneOffset, Duration.zero);
     });
 
-    test('falls back to the UK zone for an unusable device zone name', () {
-      // DateTime.timeZoneName gives abbreviations like "BST", which are not
-      // in the time zone database.
-      NotificationService.configureLocalTimeZone(zoneName: 'BST');
+    test('always builds reminders on UK time', () {
+      NotificationService.configureLocalTimeZone();
 
       expect(tz.local.name, 'Europe/London');
+    });
+
+    test('a summer reminder scheduled in winter still fires at 7pm BST', () {
+      // In winter the phone reports its zone as "GMT", which the time zone
+      // database reads as a fixed zone with no daylight saving. Reminders
+      // must not inherit that: 7pm in April is 18:00 UTC, not 19:00.
+      NotificationService.configureLocalTimeZone();
+
+      final fireAt =
+          NotificationService.toTZDateTime(DateTime(2027, 4, 10, 19, 0));
+
+      expect(fireAt.hour, 19);
+      expect(fireAt.toUtc().hour, 18);
     });
   });
 }
