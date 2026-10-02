@@ -46,10 +46,12 @@ void main() {
       );
       expect(
         find.textContaining(
-          'Add the dates to your calendar or get an email reminder',
+          'Add the dates to your calendar or get a reminder the day before.',
         ),
         findsOneWidget,
       );
+      // The app only sends notifications; it has never sent email.
+      expect(find.textContaining('email reminder'), findsNothing);
       expect(find.textContaining('All of it built by LLMs'), findsOneWidget);
     });
 
