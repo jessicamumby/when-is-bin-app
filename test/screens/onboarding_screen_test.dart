@@ -544,6 +544,35 @@ void main() {
     });
   });
 
+  group('Onboarding offline', () {
+    testWidgets('says the phone is offline, never the system error', (
+      tester,
+    ) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..error = const ApiException(
+          statusCode: 0,
+          problem: WhenIsBinsApi.networkProblem,
+          detail: "Failed host lookup: 'whenisbins.com'",
+        );
+      final lookup = LookupProvider(api: api);
+
+      await tester.pumpWidget(
+        buildApp(lookup, settings, FakeNotificationService()),
+      );
+
+      await tester.enterText(find.byType(TextField), postcode);
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('You\u2019re offline. Check your connection and try again.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Failed host lookup'), findsNothing);
+    });
+  });
+
   group('Onboarding gating', () {
     Widget buildAppRoot(
       LookupProvider lookup,
