@@ -9,6 +9,7 @@ import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/reminder_scheduler.dart';
 import '../services/reminder_sync_service.dart';
+import 'address_entry_screen.dart';
 import 'address_select_screen.dart';
 
 /// First-launch onboarding. Step 1 collects the user's postcode and runs the
@@ -81,10 +82,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         ),
       );
     } else {
-      setState(() {
-        _validationError =
-            'This council needs more information. Please try again later.';
-      });
+      // No candidate list: the council needs an address, a street, an area, a
+      // weekday or a property type, or just the postcode itself. The same form
+      // the home screen opens handles every one of them.
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => AddressEntryScreen(
+            addressLookup: addressLookup,
+            forceLight: true,
+          ),
+        ),
+      );
     }
   }
 

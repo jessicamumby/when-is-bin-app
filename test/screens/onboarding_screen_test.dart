@@ -230,6 +230,120 @@ void main() {
     });
   });
 
+  group('Onboarding without a candidate list', () {
+    // Cambridge answers CB4 2HX with no address list: the postcode alone
+    // identifies the collection round. Onboarding used to dead-end here.
+    final postcodeOnly = AddressLookup(
+      postcode: postcode,
+      requiredInput: 'none',
+      council: const Council(id: 'E07000008', name: 'Cambridge City Council'),
+    );
+    const deadEnd =
+        'This council needs more information. Please try again later.';
+
+    testWidgets('a postcode-only council completes onboarding and lands on '
+        'the bin days', (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..addressLookup = postcodeOnly
+        ..lookupResponses = [
+          Lookup(id: 'L1', status: 'done', result: schedule),
+        ];
+      final lookup = LookupProvider(api: api);
+      final notifications = FakeNotificationService();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LookupProvider>.value(value: lookup),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+            Provider<NotificationService>.value(value: notifications),
+            Provider<ReminderSyncService>.value(
+              value: ReminderSyncService(notifications: notifications),
+            ),
+          ],
+          child: const WhenIsBinApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), postcode);
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      // The same form the home screen opens, not a dead end.
+      expect(find.text(deadEnd), findsNothing);
+      expect(find.text('A few more details'), findsOneWidget);
+
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      // The postcode alone was submitted, and the address and schedule kept.
+      expect(api.lastLookupBody, {'postcode': postcode});
+      expect(settings.savedAddress, postcode);
+      expect(settings.hasSavedSchedule, isTrue);
+
+      // Back on onboarding, at the reminder step.
+      expect(find.text('When should we remind you?'), findsOneWidget);
+
+      await tester.tap(find.text('Turn on reminders'));
+      await tester.pumpAndSettle();
+
+      expect(settings.isOnboarded, isTrue);
+      expect(settings.remindersEnabled, isTrue);
+      expect(notifications.scheduleCount, greaterThanOrEqualTo(1));
+      expect(notifications.lastReminders, isNotEmpty);
+
+      // Onboarding hands over to the saved bin days, with no form left
+      // stacked on top.
+      expect(find.text('Your bin days'), findsWidgets);
+      expect(find.text('A few more details'), findsNothing);
+      expect(find.text('Turn on reminders'), findsNothing);
+    });
+
+    testWidgets('a council that needs the first line opens a light address '
+        'form under a dark app theme', (tester) async {
+      final settings = await makeSettings();
+      final api = FakeWhenIsBinsApi()
+        ..addressLookup = AddressLookup(
+          postcode: postcode,
+          requiredInput: 'property',
+          council: const Council(
+            id: 'E07000008',
+            name: 'Cambridge City Council',
+          ),
+        );
+      final lookup = LookupProvider(api: api);
+      final notifications = FakeNotificationService();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider<LookupProvider>.value(value: lookup),
+            ChangeNotifierProvider<SettingsProvider>.value(value: settings),
+            Provider<NotificationService>.value(value: notifications),
+            Provider<ReminderSyncService>.value(
+              value: ReminderSyncService(notifications: notifications),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.dark,
+            home: const OnboardingScreen(),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField), postcode);
+      await tester.tap(find.text('Find my bin day'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(deadEnd), findsNothing);
+      expect(find.text('First line of your address'), findsOneWidget);
+      final context = tester.element(find.text('A few more details'));
+      expect(Theme.of(context).brightness, Brightness.light);
+    });
+  });
+
   group('Onboarding reminder step', () {
     Future<LookupProvider> lookupWithSchedule() async {
       final api = FakeWhenIsBinsApi()
