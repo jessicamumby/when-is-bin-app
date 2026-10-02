@@ -80,6 +80,15 @@ void main() {
       Theme.of(tester.element(find.byType(screenType)));
 
   group('WhenIsBinApp routing', () {
+    testWidgets('carries the app\u2019s name as its title', (tester) async {
+      await tester.pumpWidget(await app());
+      await tester.pump();
+
+      // The task switcher and accessibility services read this title.
+      final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+      expect(materialApp.title, 'When Is Bins');
+    });
+
     testWidgets('shows onboarding when not onboarded', (tester) async {
       await tester.pumpWidget(await app());
       await tester.pump();
