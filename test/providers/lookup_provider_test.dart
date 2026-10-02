@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:when_is_bin_app/models/address_lookup.dart';
 import 'package:when_is_bin_app/models/lookup.dart';
 import 'package:when_is_bin_app/models/schedule.dart';
@@ -961,6 +965,57 @@ void main() {
 
       expect(provider.failedLookup, isNotNull);
       expect(provider.activeLookup, isNull);
+    });
+  });
+
+  group('LookupProvider with a failing transport', () {
+    // The real client, so the provider sees exactly what the API raises.
+    LookupProvider providerFailingWith(Object failure) {
+      final api = WhenIsBinsApi(
+        client: MockClient((request) async => throw failure),
+        baseUrl: 'https://whenisbins.com/v1',
+      );
+      return LookupProvider(api: api);
+    }
+
+    test('a failed TLS handshake on lookupPostcode becomes an error, not a '
+        'crash', () async {
+      final provider = providerFailingWith(
+        const HandshakeException('Handshake error in client'),
+      );
+
+      await provider.lookupPostcode('CB4 2HX');
+
+      expect(provider.error?.problem, WhenIsBinsApi.networkProblem);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('a dropped connection on a submitted lookup becomes an error, not a '
+        'crash', () async {
+      final provider = providerFailingWith(
+        const SocketException('Connection reset by peer'),
+      );
+
+      await provider.selectAddress(_candidate, postcode: 'CB4 2HX');
+
+      expect(provider.error?.problem, WhenIsBinsApi.networkProblem);
+      expect(provider.schedule, isNull);
+      expect(provider.isLoading, isFalse);
+    });
+
+    test('JSON of the wrong shape becomes an error, not a crash', () async {
+      final api = WhenIsBinsApi(
+        client: MockClient(
+          (request) async => http.Response('{"postcode": 42}', 200),
+        ),
+        baseUrl: 'https://whenisbins.com/v1',
+      );
+      final provider = LookupProvider(api: api);
+
+      await provider.lookupPostcode('CB4 2HX');
+
+      expect(provider.error?.problem, WhenIsBinsApi.invalidResponseProblem);
+      expect(provider.addressLookup, isNull);
     });
   });
 }

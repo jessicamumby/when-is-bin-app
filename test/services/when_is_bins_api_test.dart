@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -751,6 +752,80 @@ void main() {
         throwsA(isA<ApiException>()
             .having((e) => e.statusCode, 'statusCode', 429)
             .having((e) => e.retryAfter, 'retryAfter', isNull)),
+      );
+    });
+  });
+
+  group('failures outside the HTTP status', () {
+    test('turns a failed TLS handshake into a network ApiException', () async {
+      final client = MockClient((request) async {
+        throw const HandshakeException('Handshake error in client');
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.getAddresses('CB4 2HX'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.problem, 'problem', WhenIsBinsApi.networkProblem)
+            .having((e) => e.statusCode, 'statusCode', 0)),
+      );
+    });
+
+    test('turns an unwrapped socket error into a network ApiException',
+        () async {
+      final client = MockClient((request) async {
+        throw const SocketException("Failed host lookup: 'whenisbins.com'");
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.createLookup({'postcode': 'CB4 2HX'}, idempotencyKey: 'k'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.problem, 'problem', WhenIsBinsApi.networkProblem)),
+      );
+    });
+
+    test('turns JSON of the wrong shape into an invalid_response', () async {
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({'postcode': 42, 'required_input': ['none']}),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.getAddresses('CB4 2HX'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 200)
+            .having((e) => e.problem, 'problem',
+                WhenIsBinsApi.invalidResponseProblem)
+            .having((e) => e.detail, 'detail',
+                WhenIsBinsApi.unexpectedResponseDetail)),
+      );
+    });
+
+    test('turns a body that is not valid UTF-8 into an invalid_response',
+        () async {
+      final client = MockClient((request) async {
+        return http.Response.bytes(
+          [0x7b, 0xff, 0xfe, 0x7d],
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+
+      final api = buildApi(client);
+
+      await expectLater(
+        api.getLookup('lookup-1'),
+        throwsA(isA<ApiException>()
+            .having((e) => e.problem, 'problem',
+                WhenIsBinsApi.invalidResponseProblem)),
       );
     });
   });
