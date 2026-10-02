@@ -215,7 +215,7 @@ class _WhenIsBinAppState extends State<WhenIsBinApp>
     final settings = context.watch<SettingsProvider>();
 
     return MaterialApp(
-      title: 'When is bin day',
+      title: 'When Is Bins',
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       // The app mirrors the light whenisbins.com design system, so it does not

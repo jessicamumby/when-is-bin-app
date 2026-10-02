@@ -143,7 +143,7 @@ class WhenIsBinsApi {
       },
     );
     final response = await _send(() => _client.get(uri, headers: _headers()));
-    return AddressLookup.fromJson(_decode(response));
+    return _parse(response, AddressLookup.fromJson);
   }
 
   /// Start (or immediately satisfy) a property lookup.
@@ -156,7 +156,7 @@ class WhenIsBinsApi {
           headers: _headers()..['idempotency-key'] = idempotencyKey,
           body: jsonEncode(body),
         ));
-    return Lookup.fromJson(_decode(response));
+    return _parse(response, Lookup.fromJson);
   }
 
   /// Fetch one snapshot of a lookup.
@@ -165,7 +165,7 @@ class WhenIsBinsApi {
           Uri.parse('$baseUrl/lookups/$lookupId'),
           headers: _headers(),
         ));
-    return Lookup.fromJson(_decode(response));
+    return _parse(response, Lookup.fromJson);
   }
 
   /// Long-poll a lookup until it changes or the server's wait budget runs out.
@@ -185,7 +185,7 @@ class WhenIsBinsApi {
       timeout: waitTimeout,
     );
     return LookupWait(
-      lookup: Lookup.fromJson(_decode(response)),
+      lookup: _parse(response, Lookup.fromJson),
       cursor: _header(response, 'x-lookup-cursor'),
       retryAfter: _retryAfter(response),
     );
@@ -224,7 +224,7 @@ class WhenIsBinsApi {
       return const ScheduleCheck.missing();
     }
     return ScheduleCheck.updated(
-      Schedule.fromJson(_decode(response)),
+      _parse(response, Schedule.fromJson),
       etag: _header(response, 'etag') ?? etag,
     );
   }
@@ -260,6 +260,35 @@ class WhenIsBinsApi {
         problem: networkProblem,
         detail: e.message,
       );
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      // Anything else the transport throws (a failed TLS handshake, a socket
+      // error the client did not wrap) is still a failed connection, and must
+      // reach the caller as one so the user is told something.
+      throw ApiException(
+        statusCode: 0,
+        problem: networkProblem,
+        detail: e.toString(),
+      );
+    }
+  }
+
+  /// Decode [response] and build a model from it. A body that is JSON but not
+  /// the shape the model expects is an unreadable answer, not a crash.
+  T _parse<T>(
+    http.Response response,
+    T Function(Map<String, dynamic> json) fromJson,
+  ) {
+    final body = _decode(response);
+    try {
+      return fromJson(body);
+    } catch (_) {
+      throw ApiException(
+        statusCode: response.statusCode,
+        problem: invalidResponseProblem,
+        detail: unexpectedResponseDetail,
+      );
     }
   }
 
@@ -267,7 +296,7 @@ class WhenIsBinsApi {
   /// afterwards. A rate limiter or a gateway answering with HTML is a normal
   /// failure, not a crash.
   Map<String, dynamic> _decode(http.Response response) {
-    final body = _tryDecodeObject(response.body);
+    final body = _tryDecodeObject(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (body == null) {
         throw ApiException(
@@ -288,11 +317,13 @@ class WhenIsBinsApi {
     );
   }
 
-  /// The body decoded as a JSON object, or null when it is empty, not JSON, or
-  /// JSON of some other shape.
-  Map<String, dynamic>? _tryDecodeObject(String body) {
-    if (body.trim().isEmpty) return null;
+  /// The body decoded as a JSON object, or null when it is empty, not JSON,
+  /// not valid text in its declared encoding, or JSON of some other shape.
+  Map<String, dynamic>? _tryDecodeObject(http.Response response) {
     try {
+      // Reading `body` decodes the bytes, which throws on malformed UTF-8.
+      final body = response.body;
+      if (body.trim().isEmpty) return null;
       final decoded = jsonDecode(body);
       return decoded is Map<String, dynamic> ? decoded : null;
     } on FormatException {

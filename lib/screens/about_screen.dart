@@ -42,8 +42,8 @@ class AboutScreen extends StatelessWidget {
             TextSpan(
               text: 'When Is Bins tells you when to put your bins out. '
                   'Enter your postcode, pick your address, done. Add the '
-                  'dates to your calendar or get an email reminder. All of '
-                  'it built by LLMs.',
+                  'dates to your calendar or get a reminder the day before. '
+                  'All of it built by LLMs.',
             ),
           ]),
           const SizedBox(height: 20),

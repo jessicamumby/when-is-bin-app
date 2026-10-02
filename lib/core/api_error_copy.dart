@@ -16,6 +16,12 @@ String apiErrorCopy(ApiException e) {
       return 'We could not find a collecting council for that postcode.';
     case 'invalid_postcode':
       return 'Enter a full UK postcode.';
+    // The transport's own message ("Failed host lookup: ...") means nothing
+    // to the user; being offline is the usual cause and the one they can fix.
+    case WhenIsBinsApi.networkProblem:
+      return 'You\u2019re offline. Check your connection and try again.';
+    case WhenIsBinsApi.timeoutProblem:
+      return 'That took too long. Check your connection and try again.';
     default:
       return e.detail ?? 'Something went wrong. Please try again.';
   }

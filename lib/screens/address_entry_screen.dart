@@ -18,11 +18,21 @@ import 'schedule_screen.dart';
 /// Which fields appear is driven entirely by the `/addresses` answer, so this
 /// one screen covers every `required_input` journey that has no candidate list.
 class AddressEntryScreen extends StatefulWidget {
-  const AddressEntryScreen({super.key, required this.addressLookup});
+  const AddressEntryScreen({
+    super.key,
+    required this.addressLookup,
+    this.forceLight = false,
+  });
 
   /// The `/addresses` answer this form was opened for. A newer answer from the
   /// provider wins, which is how a narrowed short list reaches the picker.
   final AddressLookup addressLookup;
+
+  /// When true, the screen always renders in the light design system and, once
+  /// a schedule is found, returns to the screen that opened it instead of
+  /// showing the bin days. Used by onboarding, which is light-only and shows
+  /// its reminder step next; the main app leaves it false.
+  final bool forceLight;
 
   @override
   State<AddressEntryScreen> createState() => _AddressEntryScreenState();
@@ -53,6 +63,13 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The Theme must wrap the screen so every Theme.of(context) inside the
+    // body resolves the light theme; the Builder re-reads the wrapped context.
+    if (!widget.forceLight) return _buildScreen(context);
+    return Theme(data: AppTheme.light, child: Builder(builder: _buildScreen));
+  }
+
+  Widget _buildScreen(BuildContext context) {
     final provider = context.watch<LookupProvider>();
     final lookup = provider.addressLookup ?? widget.addressLookup;
     final spec = AddressInputSpec.forRequiredInput(lookup.requiredInput);
@@ -375,9 +392,7 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
       await settings.saveSchedule(schedule);
     }
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const ScheduleScreen()),
-    );
+    _showSchedule();
   }
 
   /// Ask the council to answer for the nearest property to the postcode.
@@ -391,6 +406,17 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
     );
     if (!mounted) return;
     if (provider.schedule == null) return;
+    _showSchedule();
+  }
+
+  /// Move on once the lookup has found a schedule.
+  void _showSchedule() {
+    if (widget.forceLight) {
+      // Onboarding: return to the onboarding screen, which now shows the
+      // reminder step (the provider holds the schedule).
+      Navigator.of(context).pop();
+      return;
+    }
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const ScheduleScreen()),
     );
@@ -462,9 +488,7 @@ class _AddressEntryScreenState extends State<AddressEntryScreen> {
       await settings.saveSchedule(schedule);
     }
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const ScheduleScreen()),
-    );
+    _showSchedule();
   }
 }
 

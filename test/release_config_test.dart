@@ -244,6 +244,13 @@ void main() {
     test('is displayed as "When Is Bins"', () {
       expect(plist, contains('<string>When Is Bins</string>'));
     });
+
+    test('names the bundle "When Is Bins", not the Dart package', () {
+      final name = RegExp(r'<key>CFBundleName</key>\s*<string>([^<]*)</string>')
+          .firstMatch(plist)
+          ?.group(1);
+      expect(name, 'When Is Bins');
+    });
   });
 
   group('Release hygiene', () {
