@@ -59,7 +59,7 @@ jobs:
           echo "No API token in the bundled .env."
 
       - name: Build the Play upload bundle
-        run: flutter build appbundle --release
+        run: flutter build appbundle --release --dart-define=GIT_SHA=$(git rev-parse --short HEAD)
 
       - name: Assert what actually ships
         run: |
