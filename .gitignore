@@ -55,3 +55,6 @@ app.*.map.json
 
 # Claude Code session handover (written by /pause)
 .claude/resume.md
+
+# verify-when-is-bin run evidence (screenshots, logs); never committed
+.verify-runs/

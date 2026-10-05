@@ -22,7 +22,7 @@ No release script yet. A release is a `release/x.y.z` PR that bumps `version:` i
 - Android: `flutter build appbundle --release --dart-define=...`, signed via `android/key.properties` (see the `.example`), uploaded to the alpha track.
 - iOS: `flutter build ipa --release --export-options-plist=... --dart-define=...`, then uploaded and submitted with the `asc` CLI.
 - Before a release: run /blast-radius over the diff since the last release tag (no tags yet, so use the last `release/*` merge).
-- Device verification: a `.claude/skills/verify-when-is-bin` skill is planned; until then, check release builds on a real device.
+- Device verification: follow `.claude/skills/verify-when-is-bin/SKILL.md` (simulator drives, evidence in the gitignored `.verify-runs/`); release builds still need a check on a real device.
 
 ## Gotchas (all release-only, all invisible in debug and green tests)
 - R8 strips Gson generics: keep `android/app/proguard-rules.pro` wired in, or every `zonedSchedule` fails and no reminder is saved.
