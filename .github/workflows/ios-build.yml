@@ -1,0 +1,47 @@
+name: iOS build
+
+# Compiles the iOS app on macOS so a Podfile, plugin or Xcode project change
+# that breaks the archive is caught on the PR, not at release time. Unsigned:
+# this proves the app builds, not that it can be uploaded.
+#
+# macOS runner minutes are billed at 10x Linux on private repos, so this only
+# runs when something that can break the native build changes.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Create .env
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Install pods
+        run: cd ios && pod install
+
+      - name: Build iOS (release, unsigned)
+        run: flutter build ios --release --no-codesign --dart-define=GIT_SHA=$(git rev-parse --short HEAD)
