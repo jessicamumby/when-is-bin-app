@@ -124,6 +124,21 @@ void main() {
       expect(rules, contains('-keep class com.dexterous.** { *; }'));
     });
 
+    test('MainActivity answers the share channel the app calls', () {
+      // The Android calendar card hands its link to a share intent in
+      // MainActivity. A renamed channel on either side fails silently at
+      // runtime (MissingPluginException), so pin the name from both files.
+      final activity = _read(
+        'android/app/src/main/kotlin/com/jessicamumby/when_is_bin_app/'
+        'MainActivity.kt',
+      );
+      final dart = _read('lib/services/share_sheet.dart');
+      const channel = 'com.jessicamumby.when_is_bin_app/share';
+      expect(dart, contains("'$channel'"));
+      expect(activity, contains('"$channel"'));
+      expect(activity, contains('Intent.ACTION_SEND'));
+    });
+
     test('keeps the saved address out of cloud backups', () {
       // The address and postcode are the user's personal data; auto-backup is
       // on by default and would copy them off the device.
