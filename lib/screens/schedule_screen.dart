@@ -226,7 +226,9 @@ class _NextCollectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final next = _nextCollectionDate();
+    final upcoming = _upcomingCollections();
+    final next = upcoming.firstOrNull;
+    final afterThat = upcoming.elementAtOrNull(1);
     final caveat = scheduleDateCaveat(schedule);
 
     return _InsetCard(
@@ -251,17 +253,24 @@ class _NextCollectionCard extends StatelessWidget {
             const Text('No upcoming collection dates are available yet.')
           else
             _NextCollectionDetails(next: next),
+          if (afterThat != null) ...[
+            const SizedBox(height: 16),
+            _AfterThatDetails(entry: afterThat),
+          ],
         ],
       ),
     );
   }
 
-  ByDateEntry? _nextCollectionDate() {
+  /// Collections from today on, soonest first. Sorted here rather than
+  /// trusting the feed's order, because the second entry is shown as the one
+  /// "after that". ISO dates sort as strings.
+  List<ByDateEntry> _upcomingCollections() {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    for (final entry in schedule.byDate) {
-      if (entry.date.compareTo(today) >= 0) return entry;
-    }
-    return null;
+    return [
+      for (final entry in schedule.byDate)
+        if (entry.date.compareTo(today) >= 0) entry,
+    ]..sort((a, b) => a.date.compareTo(b.date));
   }
 }
 
@@ -326,6 +335,40 @@ class _NextCollectionDetails extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text('Put out: $bins', style: const TextStyle(fontSize: 19)),
+      ],
+    );
+  }
+}
+
+/// The collection after the next one, a step quieter than the next: on
+/// alternate weeks it answers "which bin goes out the week after?".
+class _AfterThatDetails extends StatelessWidget {
+  const _AfterThatDetails({required this.entry});
+
+  final ByDateEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final formatted = DateFormat(
+      'EEEE d MMMM yyyy',
+    ).format(DateTime.parse(entry.date));
+    final bins = entry.collections.map((c) => c.name).join(', ');
+    final brightness = Theme.of(context).brightness;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'After that',
+          style: TextStyle(fontSize: 16, color: AppColors.mutedFor(brightness)),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          formatted,
+          style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        Text(bins, style: const TextStyle(fontSize: 16)),
       ],
     );
   }
