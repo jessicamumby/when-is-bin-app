@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/build_info.dart';
 import '../core/theme.dart';
 import '../providers/settings_provider.dart';
 import '../services/reminder_scheduler.dart';
@@ -84,6 +85,14 @@ class SettingsScreen extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AboutScreen()),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Build $kGitSha',
+            style: TextStyle(
+              fontSize: 12,
+              color: AppColors.mutedFor(Theme.of(context).brightness),
             ),
           ),
         ],

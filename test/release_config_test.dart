@@ -306,5 +306,23 @@ void main() {
         reason: 'CI should assert the permission is in the built artifact',
       );
     });
+
+    test('every CI build stamps the commit it was built from', () {
+      // The SHA at the foot of Settings is how a device check names the build
+      // it saw. A renamed define, or a build step that drops it, silently
+      // ships "Build dev" and the widget test still passes.
+      expect(
+        _read('lib/core/build_info.dart'),
+        contains("String.fromEnvironment('GIT_SHA'"),
+      );
+      final buildLines = [
+        ..._read('.github/workflows/ci.yml').split('\n'),
+        ..._read('.github/workflows/ios-build.yml').split('\n'),
+      ].where((l) => l.contains('flutter build ')).toList();
+      expect(buildLines, hasLength(2));
+      for (final line in buildLines) {
+        expect(line, contains('--dart-define=GIT_SHA='), reason: line.trim());
+      }
+    });
   });
 }

@@ -52,3 +52,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Claude Code session handover (written by /pause)
+.claude/resume.md
