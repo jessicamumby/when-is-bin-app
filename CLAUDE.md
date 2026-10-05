@@ -33,6 +33,7 @@ No release script yet. A release is a `release/x.y.z` PR that bumps `version:` i
 - Onboarding must never await permission or scheduling unbounded; both are time-limited and wrapped so `markOnboarded()` always runs.
 - iOS deployment target is 15.0 (Podfile `post_install` forces it on pods) for Xcode 26+.
 - App Store label: Physical Address is NOT used for tracking (5.1.2(i) rejection). Keep it in step with `PrivacyInfo.xcprivacy`.
+- Background re-check (`lib/services/background_refresh.dart`): one task id in three places (Dart `BackgroundRefresh.taskId`, Info.plist `BGTaskSchedulerPermittedIdentifiers`, `AppDelegate.swift`); it must be registered in `didFinishLaunching` because UIScene registers plugins too late. WorkManager's foreground service and permissions are stripped in the manifest. While the app runs, the background task hands its work to the app isolate (one writer); on resume the app reloads prefs before syncing reminders. BGTaskScheduler never runs on the iOS Simulator.
 - `test/release_config_test.dart` pins most of the above; extend it rather than relying on memory.
 
 ## Conventions
