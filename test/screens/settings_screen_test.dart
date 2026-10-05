@@ -11,8 +11,8 @@ import 'package:when_is_bin_app/screens/settings_screen.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<Widget> app(ThemeData theme) async {
-    SharedPreferences.setMockInitialValues({});
+  Future<Widget> app(ThemeData theme, {Map<String, Object>? prefs}) async {
+    SharedPreferences.setMockInitialValues(prefs ?? {});
     final settings = SettingsProvider(await SharedPreferences.getInstance());
     return ChangeNotifierProvider.value(
       value: settings,
@@ -65,5 +65,52 @@ void main() {
     await tester.scrollUntilVisible(stamp, 100);
     expect(stamp, findsOneWidget);
     expect(textColour(tester, stamp), AppColors.muted);
+  });
+
+  group('when the dates were last checked', () {
+    const saved = <String, Object>{
+      'saved_address': '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+      'saved_postcode': 'CB4 2HX',
+      'saved_property_id': 'p:4c5ee6c2f2c7c959',
+    };
+
+    testWidgets('names the day and time of the last check', (tester) async {
+      // Stored in UTC, shown in the phone's own time.
+      final checkedAt = DateTime(2026, 10, 5, 14, 2);
+      await tester.pumpWidget(
+        await app(
+          AppTheme.light,
+          prefs: {
+            ...saved,
+            'schedule_checked_at': checkedAt.toUtc().toIso8601String(),
+          },
+        ),
+      );
+
+      final line = find.text('Dates last checked: Monday 5 October, 14:02');
+      expect(line, findsOneWidget);
+      expect(textColour(tester, line), AppColors.muted);
+    });
+
+    testWidgets('says nothing before the first check', (tester) async {
+      await tester.pumpWidget(await app(AppTheme.light, prefs: saved));
+
+      expect(find.textContaining('Dates last checked'), findsNothing);
+    });
+
+    testWidgets('says nothing once the address is removed', (tester) async {
+      await tester.pumpWidget(
+        await app(
+          AppTheme.light,
+          prefs: {
+            'schedule_checked_at': DateTime(2026, 10, 5, 14, 2)
+                .toUtc()
+                .toIso8601String(),
+          },
+        ),
+      );
+
+      expect(find.textContaining('Dates last checked'), findsNothing);
+    });
   });
 }

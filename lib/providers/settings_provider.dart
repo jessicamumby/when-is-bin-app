@@ -11,17 +11,12 @@ import '../services/reminder_scheduler.dart';
 ///
 /// The schedule is stored so the saved-address shortcut still shows real bin
 /// days on a cold start, without another lookup round-trip. Its ETag is stored
-/// with it so that shortcut can be re-checked conditionally later.
+/// with it so that shortcut can be re-checked conditionally later, and so is
+/// the time it was last checked, so re-checks can be rationed.
 class SettingsProvider extends ChangeNotifier {
-  SettingsProvider(this._prefs) {
-    _reminderTime = _readReminderTime();
-    _remindersEnabled = _prefs.getBool(_kRemindersEnabled) ?? false;
-    _savedAddress = _prefs.getString(_kAddress);
-    _savedPostcode = _prefs.getString(_kPostcode);
-    _savedPropertyId = _prefs.getString(_kPropertyId);
-    _savedScheduleEtag = _prefs.getString(_kScheduleEtag);
-    _readSavedSchedule();
-    _onboarded = _prefs.getBool(_kOnboarded) ?? false;
+  SettingsProvider(this._prefs, {DateTime Function()? now})
+      : _now = now ?? DateTime.now {
+    _readAll();
   }
 
   static const _kReminderTime = 'reminder_time';
@@ -32,8 +27,10 @@ class SettingsProvider extends ChangeNotifier {
   static const _kPropertyId = 'saved_property_id';
   static const _kSchedule = 'saved_schedule';
   static const _kScheduleEtag = 'saved_schedule_etag';
+  static const _kScheduleCheckedAt = 'schedule_checked_at';
 
   final SharedPreferences _prefs;
+  final DateTime Function() _now;
 
   late ReminderTime _reminderTime;
   bool _remindersEnabled = false;
@@ -41,6 +38,7 @@ class SettingsProvider extends ChangeNotifier {
   String? _savedPostcode;
   String? _savedPropertyId;
   String? _savedScheduleEtag;
+  DateTime? _scheduleCheckedAt;
   late bool _onboarded;
 
   bool _hasSavedSchedule = false;
@@ -70,6 +68,10 @@ class SettingsProvider extends ChangeNotifier {
   /// when the schedule is re-checked. Null until the API has told us one.
   String? get savedScheduleEtag => _savedScheduleEtag;
 
+  /// When the saved schedule was last confirmed against the API: by a lookup,
+  /// or by a re-check that found it current or replaced it. Null until then.
+  DateTime? get scheduleCheckedAt => _scheduleCheckedAt;
+
   /// Whether a schedule was persisted alongside the saved address.
   bool get hasSavedSchedule => _hasSavedSchedule;
   String? get savedAddressMatch => _savedAddressMatch;
@@ -97,12 +99,47 @@ class SettingsProvider extends ChangeNotifier {
     );
   }
 
+  /// Read every persisted value into memory, replacing what was there.
+  void _readAll() {
+    _reminderTime = _readReminderTime();
+    _remindersEnabled = _prefs.getBool(_kRemindersEnabled) ?? false;
+    _savedAddress = _prefs.getString(_kAddress);
+    _savedPostcode = _prefs.getString(_kPostcode);
+    _savedPropertyId = _prefs.getString(_kPropertyId);
+    _savedScheduleEtag = _prefs.getString(_kScheduleEtag);
+    _scheduleCheckedAt = _readCheckedAt();
+    _readSavedSchedule();
+    _onboarded = _prefs.getBool(_kOnboarded) ?? false;
+  }
+
+  /// Re-read everything from storage, and say whether the saved schedule
+  /// changed.
+  ///
+  /// The background re-check runs in its own isolate, with its own
+  /// SharedPreferences cache, and writes straight to storage. This isolate's
+  /// cache never sees those writes, so without a reload the next reminder
+  /// sync here would re-derive the reminders from the schedule the background
+  /// task has just replaced, undoing its work.
+  Future<bool> reload() async {
+    final before = _prefs.getString(_kSchedule);
+    await _prefs.reload();
+    _readAll();
+    notifyListeners();
+    return _prefs.getString(_kSchedule) != before;
+  }
+
+  DateTime? _readCheckedAt() {
+    final stored = _prefs.getString(_kScheduleCheckedAt);
+    return stored == null ? null : DateTime.tryParse(stored);
+  }
+
   ReminderTime _readReminderTime() {
     final stored = _prefs.getString(_kReminderTime);
     return stored == 'morning' ? ReminderTime.morning : ReminderTime.evening;
   }
 
   void _readSavedSchedule() {
+    _clearSavedScheduleFields();
     final stored = _prefs.getString(_kSchedule);
     if (stored == null) return;
     try {
@@ -122,10 +159,23 @@ class SettingsProvider extends ChangeNotifier {
     } on FormatException {
       // Unreadable blob: treat as "nothing saved" rather than crashing every
       // cold start.
+      _clearSavedScheduleFields();
     } on TypeError {
       // Blob written in an incompatible shape by an older build — same
       // treatment as unreadable JSON.
+      _clearSavedScheduleFields();
     }
+  }
+
+  void _clearSavedScheduleFields() {
+    _hasSavedSchedule = false;
+    _savedProvisional = false;
+    _savedAddressMatch = null;
+    _savedCollections = const [];
+    _savedByDate = const [];
+    _savedCalendarUrl = null;
+    _savedRetrievedAt = null;
+    _savedNotes = null;
   }
 
   Future<void> setReminderTime(ReminderTime time) async {
@@ -164,6 +214,9 @@ class SettingsProvider extends ChangeNotifier {
   ///
   /// Pass the [etag] the server sent with the schedule to make the next check
   /// conditional; leaving it out keeps whatever tag is already stored.
+  ///
+  /// Every schedule saved here has just come back from the API, so saving it
+  /// also stamps [scheduleCheckedAt].
   Future<void> saveSchedule(Schedule schedule, {String? etag}) async {
     final changedProperty = schedule.propertyId != _savedPropertyId;
     _hasSavedSchedule = true;
@@ -196,7 +249,23 @@ class SettingsProvider extends ChangeNotifier {
     } else if (changedProperty) {
       await _setScheduleEtag(null);
     }
+    await _setCheckedAt(_now());
     notifyListeners();
+  }
+
+  /// Record a re-check that found the saved schedule still current.
+  Future<void> markScheduleChecked() async {
+    await _setCheckedAt(_now());
+    notifyListeners();
+  }
+
+  Future<void> _setCheckedAt(DateTime? at) async {
+    _scheduleCheckedAt = at?.toUtc();
+    if (at == null) {
+      await _prefs.remove(_kScheduleCheckedAt);
+    } else {
+      await _prefs.setString(_kScheduleCheckedAt, at.toUtc().toIso8601String());
+    }
   }
 
   Future<void> _setScheduleEtag(String? etag) async {
@@ -220,19 +289,13 @@ class SettingsProvider extends ChangeNotifier {
     _savedAddress = null;
     _savedPostcode = null;
     _savedPropertyId = null;
-    _hasSavedSchedule = false;
-    _savedProvisional = false;
-    _savedAddressMatch = null;
-    _savedCollections = const [];
-    _savedByDate = const [];
-    _savedCalendarUrl = null;
-    _savedRetrievedAt = null;
-    _savedNotes = null;
+    _clearSavedScheduleFields();
     _savedScheduleEtag = null;
     await _prefs.remove(_kAddress);
     await _prefs.remove(_kPostcode);
     await _prefs.remove(_kPropertyId);
     await _prefs.remove(_kScheduleEtag);
+    await _setCheckedAt(null);
     // A schedule without its address would show bin days for an address the
     // user has just removed.
     await _prefs.remove(_kSchedule);

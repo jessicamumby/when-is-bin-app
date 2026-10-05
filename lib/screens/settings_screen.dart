@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../core/build_info.dart';
@@ -14,6 +15,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
+    final checkedAt = settings.scheduleCheckedAt;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -62,6 +64,19 @@ class SettingsScreen extends StatelessWidget {
               settings.savedAddress!,
               style: const TextStyle(fontSize: 16),
             ),
+            // When the app last asked whether the council had moved anything:
+            // on launch, on return to the app, or in the background.
+            if (checkedAt != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Dates last checked: '
+                '${DateFormat('EEEE d MMMM, HH:mm').format(checkedAt.toLocal())}',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppColors.mutedFor(Theme.of(context).brightness),
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             OutlinedButton(
               onPressed: () => settings.clearSavedAddress(),

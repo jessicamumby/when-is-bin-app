@@ -429,4 +429,145 @@ void main() {
       expect(SettingsProvider(prefs).savedScheduleEtag, isNull);
     });
   });
+
+  group('SettingsProvider schedule check time', () {
+    final checkedAt = DateTime.utc(2026, 10, 5, 13, 2);
+
+    test('has no check time by default', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      expect(provider.scheduleCheckedAt, isNull);
+    });
+
+    test('saving a schedule stamps when it was checked', () async {
+      // Every schedule that is saved has just come back from the API, so
+      // saving it is a check.
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs, now: () => checkedAt);
+
+      await provider.saveSchedule(buildSchedule());
+
+      expect(provider.scheduleCheckedAt, checkedAt);
+      expect(SettingsProvider(prefs).scheduleCheckedAt, checkedAt);
+    });
+
+    test('records a check that found nothing new', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs, now: () => checkedAt);
+
+      await provider.markScheduleChecked();
+
+      expect(provider.scheduleCheckedAt, checkedAt);
+      expect(SettingsProvider(prefs).scheduleCheckedAt, checkedAt);
+    });
+
+    test('clearing the saved address clears the check time', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs, now: () => checkedAt);
+      await provider.saveSchedule(buildSchedule());
+
+      await provider.clearSavedAddress();
+
+      expect(provider.scheduleCheckedAt, isNull);
+      expect(SettingsProvider(prefs).scheduleCheckedAt, isNull);
+    });
+
+    test('ignores an unreadable check time', () async {
+      SharedPreferences.setMockInitialValues({
+        'schedule_checked_at': 'last Tuesday',
+      });
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      expect(provider.scheduleCheckedAt, isNull);
+    });
+  });
+
+  group('SettingsProvider reload', () {
+    /// The schedule blob exactly as SettingsProvider stores it.
+    Future<String> storedJson(Schedule schedule) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await SettingsProvider(prefs).saveSchedule(schedule);
+      return prefs.getString('saved_schedule') ?? '';
+    }
+
+    Schedule movedSchedule() => const Schedule(
+          propertyId: 'p:4c5ee6c2f2c7c959',
+          addressMatch: 'exact',
+          collections: [
+            Collection(
+              name: 'Black bin',
+              wasteType: 'refuse',
+              dates: ['2026-09-17'],
+            ),
+          ],
+        );
+
+    test('picks up a schedule another isolate saved', () async {
+      final before = await storedJson(buildSchedule());
+      final after = await storedJson(movedSchedule());
+      SharedPreferences.setMockInitialValues({
+        'saved_property_id': 'p:4c5ee6c2f2c7c959',
+        'saved_schedule': before,
+        'saved_schedule_etag': '"v1"',
+      });
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      // The background task writes through its own SharedPreferences cache,
+      // straight to storage: this isolate's cache never sees it.
+      SharedPreferences.setMockInitialValues({
+        'saved_property_id': 'p:4c5ee6c2f2c7c959',
+        'saved_schedule': after,
+        'saved_schedule_etag': '"v2"',
+        'schedule_checked_at': '2026-10-05T13:02:00.000Z',
+      });
+      expect(provider.savedCollections.single.dates, ['2026-09-10', '2026-09-24']);
+
+      final changed = await provider.reload();
+
+      expect(changed, isTrue);
+      expect(provider.savedCollections.single.dates, ['2026-09-17']);
+      expect(provider.savedScheduleEtag, '"v2"');
+      expect(provider.scheduleCheckedAt, DateTime.utc(2026, 10, 5, 13, 2));
+    });
+
+    test('reports no change when storage matches memory', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+      await provider.saveSchedule(buildSchedule());
+
+      expect(await provider.reload(), isFalse);
+      expect(provider.savedCollections.single.name, 'Black bin');
+    });
+
+    test('drops a schedule that was removed from storage', () async {
+      SharedPreferences.setMockInitialValues({
+        'saved_schedule': await storedJson(buildSchedule()),
+      });
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+      expect(provider.hasSavedSchedule, isTrue);
+
+      SharedPreferences.setMockInitialValues({});
+      await provider.reload();
+
+      expect(provider.hasSavedSchedule, isFalse);
+      expect(provider.savedSchedule, isNull);
+      expect(provider.savedCollections, isEmpty);
+    });
+
+    test('notifies listeners once it has reloaded', () async {
+      SharedPreferences.setMockInitialValues({});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+      var notified = 0;
+      provider.addListener(() => notified++);
+
+      await provider.reload();
+
+      expect(notified, 1);
+    });
+  });
 }
