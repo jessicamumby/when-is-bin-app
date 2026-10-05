@@ -9,6 +9,8 @@ PODS:
     - FlutterMacOS
   - url_launcher_ios (0.0.1):
     - Flutter
+  - workmanager_apple (0.0.1):
+    - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
@@ -16,6 +18,7 @@ DEPENDENCIES:
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
   - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+  - workmanager_apple (from `.symlinks/plugins/workmanager_apple/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
@@ -28,6 +31,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
   url_launcher_ios:
     :path: ".symlinks/plugins/url_launcher_ios/ios"
+  workmanager_apple:
+    :path: ".symlinks/plugins/workmanager_apple/ios"
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
@@ -35,6 +40,7 @@ SPEC CHECKSUMS:
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
   shared_preferences_foundation: 7036424c3d8ec98dfe75ff1667cb0cd531ec82bb
   url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
+  workmanager_apple: 1fc2a64e6a63ed3540fbb91b65f0c0d501881248
 
 PODFILE CHECKSUM: 4de0b531cc330234d4cb98b25944fccc8c050c6c
 

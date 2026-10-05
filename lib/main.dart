@@ -3,22 +3,21 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'core/app_config.dart';
 import 'core/theme.dart';
 import 'providers/lookup_provider.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/schedule_screen.dart';
+import 'services/background_refresh.dart';
 import 'services/notification_service.dart';
 import 'services/reminder_scheduler.dart';
 import 'services/reminder_sync_service.dart';
+import 'services/schedule_recheck_service.dart';
 import 'services/schedule_refresh_service.dart';
-import 'services/timeout_http_client.dart';
 import 'services/when_is_bins_api.dart';
 
 Future<void> main() async {
@@ -26,20 +25,27 @@ Future<void> main() async {
   await dotenv.load();
 
   final prefs = await SharedPreferences.getInstance();
-  final api = WhenIsBinsApi(
-    // Nothing in package:http times out by default: without this a hung
-    // connection leaves the app loading for ever.
-    client: TimeoutHttpClient(http.Client()),
-    baseUrl: AppConfig.baseUrl,
-    token: AppConfig.apiToken,
-  );
+  final api = WhenIsBinsApi.fromConfig();
   final notificationService = NotificationService();
   await notificationService.init();
 
   final settings = SettingsProvider(prefs);
   final reminderSync = ReminderSyncService(notifications: notificationService);
-  final scheduleRefresh = ScheduleRefreshService(api: api);
+  final recheck = ScheduleRecheckService(
+    refresh: ScheduleRefreshService(api: api),
+    reminderSync: reminderSync,
+  );
   final lookup = LookupProvider(api: api);
+
+  // While the app is running, the background task hands its re-check to this
+  // isolate, so only one isolate ever writes the schedule and the reminders.
+  ForegroundRecheck.serve(
+    () => _recheckSavedSchedule(
+      recheck: recheck,
+      settings: settings,
+      lookup: lookup,
+    ),
+  );
 
   // Reminders outlive the schedule they came from, so re-derive them on every
   // launch: a schedule that has moved on, or a switch the user turned off
@@ -61,6 +67,7 @@ Future<void> main() async {
         Provider<WhenIsBinsApi>.value(value: api),
         Provider<NotificationService>.value(value: notificationService),
         Provider<ReminderSyncService>.value(value: reminderSync),
+        Provider<ScheduleRecheckService>.value(value: recheck),
         ChangeNotifierProvider(
           create: (_) => lookup,
         ),
@@ -72,46 +79,42 @@ Future<void> main() async {
 
   // The stored schedule is re-checked after the first frame, so a collection
   // day the council has moved reaches the user without another lookup — and a
-  // slow network never delays the app starting.
+  // slow network never delays the app starting. A launch always checks; the
+  // resume and background checks are rationed.
   unawaited(
     _recheckSavedSchedule(
-      refresh: scheduleRefresh,
+      recheck: recheck,
       settings: settings,
-      reminderSync: reminderSync,
       lookup: lookup,
+      force: true,
     ),
+  );
+
+  // For the user who relies on the reminders and rarely opens the app.
+  unawaited(
+    BackgroundRefresh.schedule().catchError((Object _) {
+      debugPrint('Background refresh could not be scheduled.');
+    }),
   );
 }
 
-/// Re-check the stored schedule and, when the council has changed it, save it,
-/// re-derive the reminders from it and put it on screen.
-Future<void> _recheckSavedSchedule({
-  required ScheduleRefreshService refresh,
+/// Re-check the stored schedule and, when the council has changed it, put the
+/// new dates on screen. Saving them and moving the reminders is the
+/// [ScheduleRecheckService]'s job.
+Future<RecheckOutcome> _recheckSavedSchedule({
+  required ScheduleRecheckService recheck,
   required SettingsProvider settings,
-  required ReminderSyncService reminderSync,
   required LookupProvider lookup,
+  bool force = false,
 }) async {
-  final propertyToken = settings.savedPropertyId;
-  final cached = settings.savedSchedule;
-  if (propertyToken == null || cached == null) return;
   try {
-    final result = await refresh.refresh(
-      propertyToken: propertyToken,
-      cached: cached,
-      etag: settings.savedScheduleEtag,
-    );
-    final updated = result.schedule;
-    if (!result.isUpdated || updated == null) return;
-    await settings.saveSchedule(updated, etag: result.etag);
-    await reminderSync.sync(
-      schedule: updated,
-      enabled: settings.remindersEnabled,
-      reminderTime: settings.reminderTime,
-    );
-    lookup.restoreSchedule(updated);
+    final outcome = await recheck.recheck(settings, force: force);
+    if (outcome is ScheduleUpdated) lookup.restoreSchedule(outcome.schedule);
+    return outcome;
   } catch (_) {
     // A failed re-check must never stop the app working from the cached copy.
-    debugPrint('Schedule re-check failed on launch.');
+    debugPrint('Schedule re-check failed.');
+    return const RecheckFailed();
   }
 }
 
@@ -195,7 +198,8 @@ class _WhenIsBinAppState extends State<WhenIsBinApp>
     );
   }
 
-  /// Re-derive the reminders whenever the app comes back to the foreground.
+  /// Re-derive the reminders whenever the app comes back to the foreground,
+  /// then re-check the schedule if it is due.
   ///
   /// iOS silently drops reminders scheduled before the user has allowed
   /// notifications, and onboarding stops waiting for the permission prompt
@@ -203,11 +207,34 @@ class _WhenIsBinAppState extends State<WhenIsBinApp>
   /// ends up with none. Answering the prompt (or allowing notifications later
   /// in the Settings app) resumes the app, and iOS rarely cold-starts a
   /// suspended app, so this is the moment to put the reminders back rather
-  /// than waiting for the next launch.
+  /// than waiting for the next launch. For the same reason the launch-time
+  /// re-check of the schedule would rarely run on its own.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    unawaited(_onResumed());
+  }
+
+  Future<void> _onResumed() async {
+    final recheck = context.read<ScheduleRecheckService>();
+    final lookup = context.read<LookupProvider>();
+    // The background task may have saved a moved schedule from its own
+    // isolate, which this isolate's cache cannot see. Reload before syncing,
+    // or the sync would bring the old dates' reminders back.
+    try {
+      if (await _settings.reload() && _settings.savedAddress != null) {
+        lookup.restoreSchedule(_settings.savedSchedule);
+      }
+    } catch (_) {
+      debugPrint('Settings reload failed on resume.');
+    }
+    if (!mounted) return;
     _syncReminders('Reminder re-sync failed on resume.');
+    await _recheckSavedSchedule(
+      recheck: recheck,
+      settings: _settings,
+      lookup: lookup,
+    );
   }
 
   @override

@@ -14,6 +14,9 @@ import 'package:when_is_bin_app/screens/home_screen.dart';
 import 'package:when_is_bin_app/screens/schedule_screen.dart';
 import 'package:when_is_bin_app/services/reminder_scheduler.dart';
 import 'package:when_is_bin_app/services/reminder_sync_service.dart';
+import 'package:when_is_bin_app/services/schedule_recheck_service.dart';
+import 'package:when_is_bin_app/services/schedule_refresh_service.dart';
+import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import 'fakes/fake_api.dart';
 import 'fakes/fake_notification_scheduler.dart';
@@ -29,23 +32,28 @@ void main() {
     DateTime.parse(nextCollectionIso),
   );
 
-  String savedScheduleJson() {
+  String savedScheduleJson({
+    String bin = 'Black bin',
+    DateTime? on,
+  }) {
+    final date = on ?? nextCollection;
+    final iso = DateFormat('yyyy-MM-dd').format(date);
     return jsonEncode({
       'property_id': 'p:4c5ee6c2f2c7c959',
       'address_match': 'exact',
       'collections': [
         {
-          'name': 'Black bin',
+          'name': bin,
           'waste_type': 'refuse',
-          'dates': [nextCollectionIso],
+          'dates': [iso],
         },
       ],
       'by_date': [
         {
-          'date': nextCollectionIso,
-          'weekday': DateFormat('EEEE').format(nextCollection),
+          'date': iso,
+          'weekday': DateFormat('EEEE').format(date),
           'collections': [
-            {'name': 'Black bin', 'waste_type': 'refuse'},
+            {'name': bin, 'waste_type': 'refuse'},
           ],
         },
       ],
@@ -57,18 +65,25 @@ void main() {
   Future<Widget> app({
     Map<String, Object>? prefs,
     ReminderSyncService? reminderSync,
+    FakeWhenIsBinsApi? api,
   }) async {
     SharedPreferences.setMockInitialValues(prefs ?? {});
     final settings = SettingsProvider(await SharedPreferences.getInstance());
+    final sync =
+        reminderSync ??
+        ReminderSyncService(notifications: FakeNotificationScheduler());
+    final fakeApi = api ?? FakeWhenIsBinsApi();
     return MultiProvider(
       providers: [
-        Provider<ReminderSyncService>.value(
-          value:
-              reminderSync ??
-              ReminderSyncService(notifications: FakeNotificationScheduler()),
+        Provider<ReminderSyncService>.value(value: sync),
+        Provider<ScheduleRecheckService>.value(
+          value: ScheduleRecheckService(
+            refresh: ScheduleRefreshService(api: fakeApi),
+            reminderSync: sync,
+          ),
         ),
         ChangeNotifierProvider(
-          create: (_) => LookupProvider(api: FakeWhenIsBinsApi()),
+          create: (_) => LookupProvider(api: fakeApi),
         ),
         ChangeNotifierProvider(create: (_) => settings),
       ],
@@ -214,6 +229,139 @@ void main() {
 
       expect(notifications.scheduled, isEmpty);
       expect(notifications.cancelAllCalls, 1);
+    });
+  });
+
+  group('the schedule is re-checked when the app comes back', () {
+    final laterCollection = DateTime.now().add(const Duration(days: 5));
+    final laterLabel = DateFormat('EEEE d MMMM yyyy').format(
+      DateTime.parse(DateFormat('yyyy-MM-dd').format(laterCollection)),
+    );
+
+    Map<String, Object> savedPrefs({required Duration checkedAgo}) => {
+          'onboarded': true,
+          'reminders_enabled': true,
+          'saved_address': '15 EXAMPLE COURT, CAMBRIDGE, CB4 2HX',
+          'saved_postcode': 'CB4 2HX',
+          'saved_property_id': 'p:4c5ee6c2f2c7c959',
+          'saved_schedule': savedScheduleJson(),
+          'saved_schedule_etag': '"v1"',
+          'schedule_checked_at':
+              DateTime.now().toUtc().subtract(checkedAgo).toIso8601String(),
+        };
+
+    void resume(WidgetTester tester) {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    }
+
+    testWidgets(
+      'picks up what the background task saved before re-syncing reminders',
+      (tester) async {
+        // The background task writes the moved schedule from its own isolate,
+        // so this isolate's cached copy is stale. Re-syncing from the cache on
+        // resume would put the old dates' reminders back.
+        final notifications = FakeNotificationScheduler();
+        final prefs = savedPrefs(checkedAgo: const Duration(hours: 1));
+        await tester.pumpWidget(
+          await app(
+            prefs: prefs,
+            reminderSync: ReminderSyncService(notifications: notifications),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(find.text(nextCollectionLabel), findsOneWidget);
+
+        // What the background isolate leaves in storage.
+        SharedPreferences.setMockInitialValues({
+          ...prefs,
+          'saved_schedule': savedScheduleJson(
+            bin: 'Blue bin',
+            on: laterCollection,
+          ),
+          'saved_schedule_etag': '"v2"',
+          'schedule_checked_at': DateTime.now().toUtc().toIso8601String(),
+        });
+
+        resume(tester);
+        await tester.pump();
+        await tester.pump();
+
+        expect(notifications.pending.single.binNames, ['Blue bin']);
+        expect(find.text(laterLabel), findsOneWidget);
+        expect(find.text(nextCollectionLabel), findsNothing);
+      },
+    );
+
+    testWidgets('does not ask the API again within the recheck interval', (
+      tester,
+    ) async {
+      final api = FakeWhenIsBinsApi();
+      await tester.pumpWidget(
+        await app(
+          api: api,
+          prefs: savedPrefs(checkedAgo: const Duration(hours: 1)),
+        ),
+      );
+      await tester.pump();
+
+      resume(tester);
+      await tester.pump();
+      await tester.pump();
+
+      expect(api.scheduleCheckCalls, 0);
+    });
+
+    testWidgets('re-checks a stale schedule and shows the moved date', (
+      tester,
+    ) async {
+      final notifications = FakeNotificationScheduler();
+      final api = FakeWhenIsBinsApi()
+        ..scheduleCheck = ScheduleCheck.updated(
+          Schedule(
+            propertyId: 'p:4c5ee6c2f2c7c959',
+            addressMatch: 'exact',
+            collections: [
+              Collection(
+                name: 'Black bin',
+                wasteType: 'refuse',
+                dates: [DateFormat('yyyy-MM-dd').format(laterCollection)],
+              ),
+            ],
+            byDate: [
+              ByDateEntry(
+                date: DateFormat('yyyy-MM-dd').format(laterCollection),
+                weekday: DateFormat('EEEE').format(laterCollection),
+                collections: const [
+                  ByDateCollection(name: 'Black bin', wasteType: 'refuse'),
+                ],
+              ),
+            ],
+          ),
+          etag: '"v2"',
+        );
+      await tester.pumpWidget(
+        await app(
+          api: api,
+          reminderSync: ReminderSyncService(notifications: notifications),
+          prefs: savedPrefs(checkedAgo: const Duration(hours: 13)),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      resume(tester);
+      await tester.pump();
+      await tester.pump();
+
+      expect(api.scheduleCheckCalls, 1);
+      expect(api.lastScheduleEtag, '"v1"');
+      expect(find.text(laterLabel), findsOneWidget);
+      expect(
+        notifications.pending.single.fireAt.day,
+        laterCollection.subtract(const Duration(days: 1)).day,
+      );
     });
   });
 

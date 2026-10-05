@@ -16,6 +16,28 @@ String _read(String path) {
   return file.readAsStringSync();
 }
 
+/// The background refresh task's identifier, as the Dart side registers it.
+String _backgroundTaskId() {
+  final id = RegExp(r"static const taskId = '([^']+)';")
+      .firstMatch(_read('lib/services/background_refresh.dart'))
+      ?.group(1);
+  expect(id, isNotNull, reason: 'BackgroundRefresh.taskId not found');
+  return id ?? '';
+}
+
+/// The `<array>` of strings that follows [key] in a plist, past any comment.
+List<String> _plistArray(String plist, String key) {
+  final array = RegExp(
+    '<key>$key</key>\\s*(?:<!--.*?-->\\s*)?<array>(.*?)</array>',
+    dotAll: true,
+  ).firstMatch(plist)?.group(1);
+  if (array == null) return const [];
+  return RegExp(r'<string>([^<]*)</string>')
+      .allMatches(array)
+      .map((m) => m.group(1) ?? '')
+      .toList();
+}
+
 void main() {
   group('Android release configuration', () {
     late String manifest;
@@ -122,6 +144,32 @@ void main() {
       expect(rules, contains('-keepattributes Signature'));
       expect(rules, contains('com.google.gson.reflect.TypeToken'));
       expect(rules, contains('-keep class com.dexterous.** { *; }'));
+    });
+
+    test('background refresh never runs as a foreground service', () {
+      // WorkManager and the workmanager plugin declare a foreground service
+      // and its permissions for long-running workers. The schedule re-check
+      // is a few seconds of network, never a foreground service, and a typed
+      // FOREGROUND_SERVICE_* permission brings a Play Console declaration.
+      for (final name in const [
+        'android.permission.FOREGROUND_SERVICE',
+        'android.permission.FOREGROUND_SERVICE_SHORT_SERVICE',
+        'androidx.work.impl.foreground.SystemForegroundService',
+      ]) {
+        final declaration = RegExp(
+          '<[a-z-]+\\s+android:name="${RegExp.escape(name)}"[^>]*>',
+        ).firstMatch(manifest)?.group(0);
+        expect(declaration, isNotNull, reason: '$name is not overridden');
+        expect(
+          declaration,
+          contains('tools:node="remove"'),
+          reason: '$name must be stripped from the merged manifest',
+        );
+      }
+      expect(
+        manifest,
+        contains('xmlns:tools="http://schemas.android.com/tools"'),
+      );
     });
 
     test('keeps the saved address out of cloud backups', () {
@@ -241,6 +289,60 @@ void main() {
       expect(manifest, contains('NSPrivacyCollectedDataTypeTracking'));
     });
 
+    test('permits the background refresh task', () {
+      // BGTaskScheduler refuses to schedule an identifier missing from this
+      // list, and the refusal is only logged.
+      expect(
+        _plistArray(plist, 'BGTaskSchedulerPermittedIdentifiers'),
+        contains(_backgroundTaskId()),
+      );
+    });
+
+    test('declares background fetch for the refresh task', () {
+      // A BGAppRefreshTask needs the "Background fetch" mode.
+      expect(_plistArray(plist, 'UIBackgroundModes'), contains('fetch'));
+    });
+
+    test('registers the refresh task before launch finishes', () {
+      // With the UIScene lifecycle, plugins register after
+      // didFinishLaunching returns, which is too late for BGTaskScheduler: a
+      // relaunched app with no handler never receives its task.
+      final delegate = _read('ios/Runner/AppDelegate.swift');
+      final launch = RegExp(
+        r'didFinishLaunchingWithOptions.*?return super\.application',
+        dotAll: true,
+      ).firstMatch(delegate)?.group(0);
+      expect(launch, isNotNull);
+      expect(
+        launch,
+        matches(
+          RegExp(
+            r'WorkmanagerPlugin\.registerPeriodicTask\(\s*'
+            'withIdentifier: "${RegExp.escape(_backgroundTaskId())}"',
+          ),
+        ),
+      );
+      expect(
+        launch,
+        contains('WorkmanagerPlugin.setPluginRegistrantCallback'),
+        reason: 'the background engine needs the notification and storage '
+            'plugins registered',
+      );
+    });
+
+    test('asks iOS for the refresh no sooner than the recheck interval', () {
+      // Any earlier and the run would only be turned away by the interval.
+      final seconds = RegExp(r'earliestBeginInSeconds: (\d+)')
+          .firstMatch(_read('ios/Runner/AppDelegate.swift'))
+          ?.group(1);
+      final hours = RegExp(r'recheckInterval = Duration\(hours: (\d+)\)')
+          .firstMatch(_read('lib/services/schedule_recheck_service.dart'))
+          ?.group(1);
+      expect(seconds, isNotNull);
+      expect(hours, isNotNull);
+      expect(int.parse(seconds ?? ''), int.parse(hours ?? '') * 3600);
+    });
+
     test('is displayed as "When Is Bins"', () {
       expect(plist, contains('<string>When Is Bins</string>'));
     });
@@ -304,6 +406,22 @@ void main() {
         ci,
         contains('android.permission.INTERNET'),
         reason: 'CI should assert the permission is in the built artifact',
+      );
+    });
+
+    test('CI guards the background refresh in what ships', () {
+      final ci = _read('.github/workflows/ci.yml');
+      expect(
+        ci,
+        contains('android.permission.FOREGROUND_SERVICE'),
+        reason: 'the stripped foreground-service permissions must stay out '
+            'of the built artifact',
+      );
+      expect(
+        ci,
+        contains('dev.fluttercommunity.workmanager.BackgroundWorker'),
+        reason: 'WorkManager finds the worker by class name, so R8 must not '
+            'rename it',
       );
     });
 
