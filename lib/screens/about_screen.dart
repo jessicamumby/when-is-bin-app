@@ -20,10 +20,10 @@ const String aiAgentsUrl =
     'https://loosemore.com/2026/02/25/ai-agents-will-join-up-government-'
     'before-government-does/';
 
-/// A short About: what the app does, who writes it, and what the bin day
-/// service is really for. Mirrors the wording of the service it reads from, so
-/// an answer given in the app can be checked against the same explanation on
-/// the website.
+/// A short About: what the app does, who writes it, and why the service it
+/// reads from exists. That last part is Public Digital's reason, not this
+/// app's, so it is credited to them: quoted bare, it read as the app's own
+/// mission and as something the user was being asked to act on.
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key, this.openLink = openInBrowser});
 
@@ -67,11 +67,10 @@ class AboutScreen extends StatelessWidget {
           const SizedBox(height: 20),
           _paragraph([
             const TextSpan(
-              text: 'But a UK-wide bin day website isn\u2019t the point. '
-                  'The point is to learn how to respond to what\u2019s '
-                  'coming. And what\u2019s coming is ',
+              text: 'Public Digital built WhenIsBins to learn how to respond '
+                  'to AI agents. Read why in ',
             ),
-            _link('AI agents', aiAgentsUrl),
+            _link('Tom Loosemore\u2019s post', aiAgentsUrl),
             const TextSpan(text: '.'),
           ]),
         ],

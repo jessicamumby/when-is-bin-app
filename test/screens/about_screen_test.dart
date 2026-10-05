@@ -80,22 +80,24 @@ void main() {
       );
     });
 
-    testWidgets('closes on the point of the demonstrator', (tester) async {
+    testWidgets('credits the point of the service to Public Digital',
+        (tester) async {
+      // Quoted bare, the service's own "isn't the point" line read as this
+      // app's mission, and as something the user was asked to act on.
       await pumpAbout(tester);
 
       expect(
         find.textContaining(
-          "But a UK-wide bin day website isn\u2019t the point",
+          'Public Digital built WhenIsBins to learn how to respond to AI '
+          'agents.',
         ),
         findsOneWidget,
       );
-      expect(
-        find.textContaining('what\u2019s coming is'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('isn\u2019t the point'), findsNothing);
+      expect(find.textContaining('what\u2019s coming'), findsNothing);
     });
 
-    testWidgets('opens Sources, Privacy and the AI agents piece',
+    testWidgets('opens Sources, Privacy and the AI agents post',
         (tester) async {
       final opened = await pumpAbout(tester);
 
@@ -107,7 +109,7 @@ void main() {
       await tester.pump();
       expect(opened, [Uri.parse(sourcesUrl), Uri.parse(privacyUrl)]);
 
-      await tester.tap(find.text('AI agents'));
+      await tester.tap(find.text('Tom Loosemore\u2019s post'));
       await tester.pump();
       expect(opened, [
         Uri.parse(sourcesUrl),
@@ -175,7 +177,7 @@ void main() {
           'Jessica Mumby',
           'Sources',
           'Privacy',
-          'AI agents',
+          'Tom Loosemore\u2019s post',
         ]),
         reason: 'each tappable link must be its own labelled button',
       );
