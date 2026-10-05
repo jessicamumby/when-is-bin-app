@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:when_is_bin_app/core/build_info.dart';
 import 'package:when_is_bin_app/core/theme.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/about_screen.dart';
@@ -52,5 +53,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AboutScreen), findsOneWidget);
+  });
+
+  testWidgets('names the build it is running at the foot of the screen',
+      (tester) async {
+    await tester.pumpWidget(await app(AppTheme.light));
+
+    // 'Build dev' under a plain `flutter test`; the real short SHA when the
+    // build passes --dart-define=GIT_SHA.
+    final stamp = find.text('Build $kGitSha');
+    await tester.scrollUntilVisible(stamp, 100);
+    expect(stamp, findsOneWidget);
+    expect(textColour(tester, stamp), AppColors.muted);
   });
 }
