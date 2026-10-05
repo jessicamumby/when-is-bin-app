@@ -24,6 +24,13 @@ FEATURE=onb-postcode-only            # the feature ID you are driving
 RUN_DIR="$PWD/.verify-runs/$(date +%Y%m%d-%H%M%S)-$FEATURE"; mkdir -p "$RUN_DIR"; : > "$RUN_DIR/started.txt"
 ```
 
+Agent shells usually keep no variables between tool calls. Start every later command by setting them again, from the repo root:
+
+```bash
+UDID=<simulator udid>; FEATURE=onb-postcode-only
+RUN_DIR=$(ls -d "$PWD"/.verify-runs/*-"$FEATURE" | tail -1)   # this run's directory
+```
+
 ## Helpers (`scripts/`, all executable)
 
 | Script | Invocation | Does |
@@ -31,7 +38,7 @@ RUN_DIR="$PWD/.verify-runs/$(date +%Y%m%d-%H%M%S)-$FEATURE"; mkdir -p "$RUN_DIR"
 | `doctor.sh` | `scripts/doctor.sh "$UDID"` | read-only freshness and device check (Doctor) |
 | `tap_system_button.sh` | `[TAP_DELAY=s] scripts/tap_system_button.sh "$UDID" <label> [timeout] [dir]` | taps an iOS alert button by its visible label (Drive) |
 | `ocr.swift` | built by `tap_system_button.sh`; then `"$TMPDIR/verify-when-is-bin-ocr" <png>` | prints the text Vision reads in a screenshot, with pixel centres |
-| `find_postcode_only.sh` | `[MAX_WAIT=s] scripts/find_postcode_only.sh "<postcode>" ...` | read-only `GET /addresses` probe for a postcode-only council (onboarding feature) |
+| `find_postcode_only.sh` | `[MAX_WAIT=s] scripts/find_postcode_only.sh "<postcode>" ...` | read-only `GET /addresses` probe for a postcode-only council, and the API allowance gate (exit 2 = rate limited; records the end of the window for doctor) |
 | `cleanup.sh` | `scripts/cleanup.sh "$RUN_DIR"` | stops what `started.txt` lists, keeps the evidence (Cleanup) |
 
 Paths are relative to `.claude/skills/verify-when-is-bin/`.
@@ -64,11 +71,22 @@ Read-only apart from `git fetch`. It must print:
 - `branch=... head=<sha> origin/main=<sha> ahead=N behind=0`. Behind > 0 prints `REFUSE` and exits 1: do not build. Rebase or merge `origin/main` first, or set `ALLOW_BEHIND=1` only when Jess said to verify an older build.
 - `uncommitted_files=0`, or the verdict's Build line says `+uncommitted`.
 - `.env present`, `api_host=whenisbins.com` (anything else: say so in the verdict), `api_token=set|empty` (value never shown; empty is fine for a drive or two, see Gotchas).
+- `api_allowance=no block recorded`, or `WARN: api_allowance=spent until <time>`: a block `find_postcode_only.sh` saw earlier (doctor itself sends no API request). While it is spent, every drive that calls the API is INCONCLUSIVE; go straight to Cleanup and the verdict, or run a fixture drive that does not need the API.
 - `simulator <udid> booted`, and whether the app is installed.
 - the physical iPhone row if one is reachable (informational on rung 1).
 - `doctor_exit=0`.
 
 Run doctor before the first drive, after any failed drive, and whenever something looks off.
+
+## API allowance gate
+
+Before any drive that calls the API (anything through onboarding), spend one request to learn whether the API will answer:
+
+```bash
+.claude/skills/verify-when-is-bin/scripts/find_postcode_only.sh "<postcode>" | tee -a "$RUN_DIR/probe.log"
+```
+
+Exit 2 with `RATE-LIMITED: ... retry after <s>, at <time>` means the per-IP allowance is spent: do not drive (the drive only meets the same 429), run Cleanup, and give the verdict INCONCLUSIVE with that time in Notes. The 429 answers do not extend the window (the countdown kept falling across repeated probes on 5 October 2026). If you drive anyway to check the harness, the drive fails in seconds with `VERIFY state after postcode: rate-limited` and a `PRECONDITION:` reason, which is still INCONCLUSIVE.
 
 ## Drive
 
@@ -117,6 +135,7 @@ Rules: real user actions only; arrange preconditions (fresh install, a suitable 
   ```
 
 - Pending notifications: the drive asks iOS (`UNUserNotificationCenter`, through the plugin's read-only `pendingNotificationRequests()`) and logs one `VERIFY pending id=...` line per request. That is the OS's list, not the app's. No host-side file holds it on the iOS 26 simulator (searched `data/Library/UserNotifications` on 5 October 2026), so don't look for one.
+- A failed drive: quote the `PRECONDITION:` or `BEHAVIOUR:` line and OCR the `<prefix>-x-*.png` screenshot it took, so the verdict shows what the user saw (for example the rate-limit copy and its `Try again in about <s> seconds`).
 - Text on a host screenshot: `"$TMPDIR/verify-when-is-bin-ocr" <png> | cut -f1` prints every line Vision reads, a quick check that a capture shows what you claim.
 - Build identity: the drive passes `--dart-define=GIT_SHA=<doctor head>`; Settings shows `Build <sha>`. A debug simulator build also shows the red DEBUG banner, which tells it apart from the App Store build. Screenshot Settings when the feature passes through it; otherwise build identity rests on the doctor log plus the drive's own build.
 
@@ -165,7 +184,7 @@ xcrun devicectl device process launch --device 00008150-000A0011029B401C com.jes
 
 ## Gotchas
 
-- The live API is the only backend, and anonymous use is rate limited per IP, which the simulator shares. On 5 October 2026 about 15 requests earned a 40 minute `Retry-After`, and about 35 in the day (probes plus three onboarding drives, each with a long-poll lookup) earned 81893 seconds, blocking every API drive until the next day. Probe sparingly (`scripts/find_postcode_only.sh` stops on a long wait), prefer the fixture drive where the API is not under test, and ask Jess for a WhenIsBins token in `.env` (never print it).
+- The live API is the only backend, and anonymous use is rate limited per IP, which the simulator shares. On 5 October 2026 about 15 requests earned a 40 minute `Retry-After`, and about 35 in the day (probes plus three onboarding drives, each with a long-poll lookup) earned 81893 seconds, blocking every API drive until the next day. Probe sparingly (`scripts/find_postcode_only.sh` stops on a long wait and records the end of the window for doctor), prefer the fixture drive where the API is not under test, and ask Jess for a WhenIsBins token: free from whenisbins.com by emailing hello@whenisbins.com (as `.env.example` says), set as `WHENISBINS_API_TOKEN=` in the worktree's `.env`. Never print it, and never copy it from another checkout's `.env` without her saying so.
 - Council answers change. A postcode that was postcode-only last month may list addresses today (Cambridge CB4 2HX did), and a council whose site is down sits on the address form for the app's whole lookup budget with no message. Re-check the postcode before a drive; the feature file says how.
 - Onboarding only shows on first launch, and the notification permission outlives an uninstall on the simulator. Reset = `xcrun simctl uninstall "$UDID" com.jessicamumby.whenIsBinApp; xcrun simctl privacy "$UDID" reset all com.jessicamumby.whenIsBinApp` on a simulator you own (verified: the next drive logs `allowed=false`). Never do this on Jess's iPhone.
 - Without `--keep-app-running`, `flutter drive` uninstalls the app at the end; with it, the app left behind is the frozen test instance. Either way "after relaunch" needs `xcrun simctl launch --terminate-running-process` and a host screenshot.

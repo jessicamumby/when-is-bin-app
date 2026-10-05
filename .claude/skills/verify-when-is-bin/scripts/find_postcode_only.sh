@@ -6,6 +6,8 @@
 # seconds (default 300), then stops rather than sleeping for the long window.
 # Usage: .claude/skills/verify-when-is-bin/scripts/find_postcode_only.sh ["PC1 1AA" "PC2 2BB" ...]
 # Prints one line per postcode; lines starting "POSTCODE-ONLY" are usable.
+# Exit 2 = RATE-LIMITED: stop, the feature is INCONCLUSIVE until the printed
+# time; do not run a drive (it only hits the same 429).
 # Budget: the anonymous allowance ran out after roughly 35 requests in a day
 # (Retry-After 81893s on 5 October 2026), and the app on the simulator shares
 # it. Probe a handful at a time.
@@ -25,7 +27,12 @@ for pc in "$@"; do
     if grep -q '^HTTP/[0-9.]* 429' "$hdr" || printf '%s' "$body" | grep -q '"rate_limited"'; then
       wait=$(grep -i '^retry-after:' "$hdr" | tr -dc '0-9'); wait=${wait:-20}
       if [ "$wait" -gt "${MAX_WAIT:-300}" ]; then
-        echo "RATE-LIMITED: anonymous allowance spent; retry after ${wait}s (the app on the simulator shares this limit). Stopping."; exit 2
+        until_epoch=$(( $(date +%s) + wait ))
+        # Remembered for doctor.sh, so the next run sees the block without
+        # spending a request (the 429s themselves did not extend the window).
+        mkdir -p "$(git rev-parse --show-toplevel)/.verify-runs" &&
+          echo "$until_epoch" > "$(git rev-parse --show-toplevel)/.verify-runs/.rate-limited-until"
+        echo "RATE-LIMITED: anonymous allowance spent; retry after ${wait}s, at $(date -r "$until_epoch" '+%a %d %b %H:%M %Z') (the app on the simulator shares this limit). Stopping."; exit 2
       fi
       sleep "$wait"; continue
     fi

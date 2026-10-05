@@ -29,7 +29,14 @@ if [ -f .env ]; then
   host=$(printf '%s' "${base:-https://whenisbins.com/v1}" | sed -E 's#^https?://##; s#/.*##')
   echo "api_host=$host (expected whenisbins.com: the live API; there is no staging)"
   [ "$host" = "whenisbins.com" ] || { echo "WARN: api_host is not whenisbins.com; say so in the verdict"; }
-  if grep -qE '^WHENISBINS_API_TOKEN=.+' .env; then echo "api_token=set (value not shown)"; else echo "api_token=empty (anonymous allowance; fine for one drive)"; fi
+  if grep -qE '^WHENISBINS_API_TOKEN=.+' .env; then echo "api_token=set (value not shown)"; else echo "api_token=empty (anonymous: about 35 requests a day per IP, roughly two onboarding drives)"; fi
+  # No API request here: the last block find_postcode_only.sh saw, if any.
+  rl=.verify-runs/.rate-limited-until
+  if [ -f "$rl" ] && [ "$(cat "$rl")" -gt "$(date +%s)" ]; then
+    echo "WARN: api_allowance=spent until $(date -r "$(cat "$rl")" '+%a %d %b %H:%M %Z') (recorded by find_postcode_only.sh). API drives are INCONCLUSIVE until then; fixture drives still run."
+  else
+    echo "api_allowance=no block recorded (find_postcode_only.sh is the check; it costs one request)"
+  fi
 else
   echo "FAIL: .env missing (cp .env.example .env)"; fail=1
 fi

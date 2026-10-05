@@ -97,7 +97,8 @@ Future<void> driveOnboardingToReminderStep(
   await pumpUntil(
     tester,
     find.text('Find your bin day'),
-    reason: 'PRECONDITION: onboarding is not showing, so this is not a first '
+    reason:
+        'PRECONDITION: onboarding is not showing, so this is not a first '
         'launch. Uninstall the app from the simulator and drive again.',
   );
   mark('state first-launch onboarding visible');
@@ -114,8 +115,16 @@ Future<void> driveOnboardingToReminderStep(
     'address-form': find.text('A few more details'),
     'address-picker': find.text('Select your address'),
     'dead-end': find.textContaining('This council needs more information'),
+    // apiErrorCopy in lib/core/api_error_copy.dart: the API refused the
+    // request, so the feature cannot be reached from this IP right now.
+    'rate-limited': find.textContaining('Lots of people are checking'),
+    'offline': find.textContaining('offline'),
   });
   mark('state after postcode: ${afterPostcode ?? 'timeout'}');
+  final retryLine = find.textContaining('Try again in about');
+  if (retryLine.evaluate().isNotEmpty) {
+    mark('state ${(retryLine.evaluate().first.widget as Text).data}');
+  }
   if (afterPostcode != 'address-form') {
     await shot(binding, tester, '$prefix-x-after-postcode');
   }
@@ -127,15 +136,32 @@ Future<void> driveOnboardingToReminderStep(
     case 'address-form':
       break;
     case 'address-picker':
-      fail('PRECONDITION: $verifyPostcode offers an address list, so it is not '
-          'a postcode-only council today. Pick another postcode (see the '
-          'feature file) and drive again.');
+      fail(
+        'PRECONDITION: $verifyPostcode offers an address list, so it is not '
+        'a postcode-only council today. Pick another postcode (see the '
+        'feature file) and drive again.',
+      );
+    case 'rate-limited':
+      fail(
+        'PRECONDITION: the WhenIsBins API rate limited this IP before the '
+        'council answered (see the "Try again in about" line). Unreachable '
+        'until the window ends: INCONCLUSIVE, not a fail. Do not retry.',
+      );
+    case 'offline':
+      fail(
+        'PRECONDITION: the app reported it is offline. Check the Mac\'s '
+        'network and drive again.',
+      );
     case 'dead-end':
-      fail('BEHAVIOUR: onboarding dead-ended on "This council needs more '
-          'information" for $verifyPostcode.');
+      fail(
+        'BEHAVIOUR: onboarding dead-ended on "This council needs more '
+        'information" for $verifyPostcode.',
+      );
     default:
-      fail('Timed out after the postcode: no address form, picker or dead end '
-          '(offline, rate-limited or API down?). See the screenshot.');
+      fail(
+        'Timed out after the postcode: no address form, picker or dead end '
+        '(offline, rate-limited or API down?). See the screenshot.',
+      );
   }
 
   final fieldCount = inAddressForm(find.byType(TextField)).evaluate().length;
@@ -161,7 +187,8 @@ Future<void> _pickAddress(
   expect(
     candidate,
     findsOneWidget,
-    reason: 'PRECONDITION: the picker has no single address containing '
+    reason:
+        'PRECONDITION: the picker has no single address containing '
         '"$verifyAddress".',
   );
   await tester.tap(candidate);
@@ -186,8 +213,10 @@ Future<void> _awaitReminderStep(
   mark('state after lookup: ${afterLookup ?? 'timeout'}');
   if (afterLookup != 'reminder-step') {
     await shot(binding, tester, '$prefix-x-after-lookup');
-    fail('Lookup for $verifyPostcode did not reach the reminder step '
-        '(${afterLookup ?? 'timeout'}). See the screenshot.');
+    fail(
+      'Lookup for $verifyPostcode did not reach the reminder step '
+      '(${afterLookup ?? 'timeout'}). See the screenshot.',
+    );
   }
   await shot(binding, tester, '$prefix-3-reminder-step');
 }
