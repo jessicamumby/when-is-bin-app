@@ -392,6 +392,7 @@ class _ReminderCard extends StatelessWidget {
         ? '9:00am on the day before'
         : '7:00pm on the day before';
     final canSchedule = !provisional;
+    final muted = AppColors.mutedFor(Theme.of(context).brightness);
 
     return _InsetCard(
       child: Column(
@@ -404,10 +405,16 @@ class _ReminderCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'You\u2019ll get a notification at $timeLabel.',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.mutedFor(Theme.of(context).brightness),
-            ),
+            style: TextStyle(fontSize: 16, color: muted),
+          ),
+          const SizedBox(height: 8),
+          // A reminder states the council's published plan, not a promise
+          // that the lorry comes. Say so where reminders are switched on, so a
+          // late collection isn't read as the app getting it wrong.
+          Text(
+            'Reminders follow the dates your council publishes. A collection '
+            'can still be delayed on the day.',
+            style: TextStyle(fontSize: 16, color: muted),
           ),
           const SizedBox(height: 12),
           Row(

@@ -255,6 +255,23 @@ void main() {
     expect(find.text('Reminders on'), findsOneWidget);
   });
 
+  testWidgets('says reminders only know the published dates', (tester) async {
+    // A reminder states the council's published plan, not a promise that the
+    // lorry comes. Keep the gap between trusting the app and trusting the
+    // collection visible where reminders are switched on.
+    final settings = await makeSettings();
+
+    await tester.pumpWidget(buildApp(settings, sync()));
+
+    expect(
+      find.text(
+        'Reminders follow the dates your council publishes. A collection '
+        'can still be delayed on the day.',
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('turning reminders on schedules them and persists the switch',
       (tester) async {
     final settings = await makeSettings();
