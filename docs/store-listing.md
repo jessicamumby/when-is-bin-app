@@ -95,7 +95,7 @@ Bin day reminders
 ### Promotional text (max 170 characters)
 
 ```
-Enter your postcode, pick your address, and get a reminder the night before collection — plus a calendar feed of your bin days.
+Enter your postcode, pick your address, and get a reminder the day before collection — plus a calendar feed of your bin days.
 ```
 
 ### Description (max 4000 characters)
