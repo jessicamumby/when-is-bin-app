@@ -1,0 +1,10 @@
+{
+  "onboarded": true,
+  "reminder_time": "morning",
+  "reminders_enabled": true,
+  "saved_address": "Fixture address",
+  "saved_postcode": "CB2 3QD",
+  "saved_property_id": "p:8ccd92739644bc77",
+  "saved_schedule": "{\"property_id\":\"p:8ccd92739644bc77\",\"address_match\":\"exact\",\"collections\":[{\"name\":\"Black bin\",\"waste_type\":\"refuse\",\"dates\":[\"2026-10-11\",\"2026-10-25\"],\"dates_complete\":false,\"bin_colour\":null,\"lid_colour\":null,\"colour_source\":null,\"container\":null,\"subscription_required\":false},{\"name\":\"Blue bin\",\"waste_type\":\"recycling\",\"dates\":[\"2026-10-18\"],\"dates_complete\":false,\"bin_colour\":null,\"lid_colour\":null,\"colour_source\":null,\"container\":null,\"subscription_required\":false}],\"by_date\":[{\"date\":\"2026-10-11\",\"weekday\":\"Sunday\",\"collections\":[{\"name\":\"Black bin\",\"waste_type\":\"refuse\",\"subscription_required\":false}]},{\"date\":\"2026-10-18\",\"weekday\":\"Sunday\",\"collections\":[{\"name\":\"Blue bin\",\"waste_type\":\"recycling\",\"subscription_required\":false}]},{\"date\":\"2026-10-25\",\"weekday\":\"Sunday\",\"collections\":[{\"name\":\"Black bin\",\"waste_type\":\"refuse\",\"subscription_required\":false}]}],\"calendar_url\":\"https://whenisbins.com/verify-fixture.ics\",\"retrieved_at\":null,\"provisional\":false,\"notes\":\"Bank holiday collections may move.\"}",
+  "saved_schedule_etag": "\"v1-etag\""
+}
