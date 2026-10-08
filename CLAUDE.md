@@ -1,9 +1,9 @@
 # When Is Bins
 
-UK bin-day reminders: postcode, then address, then the collection schedule from the free WhenIsBins API (operated by Public Digital), with a local notification the day before (9am or 7pm). Independent app, not a Public Digital product. Live on iOS; Android is on the Play closed-testing (alpha) track only. Store copy and App Privacy answers live in `docs/store-listing.md`.
+UK bin-day reminders: postcode, then address, then the collection schedule from the free WhenIsBins API (operated by Public Digital), with a local notification the day before (9am or 7pm). Independent app, not a Public Digital product. Live on iOS; Android is on the Play closed-testing (alpha) track only. Store copy and App Privacy answers live in `docs/store-listing.md`; queued work lives in `docs/roadmap.md`.
 
 ## Stack
-Flutter (stable) for iOS and Android. Provider + ChangeNotifier. `http`, `flutter_local_notifications` + `timezone`, `shared_preferences`, `flutter_dotenv`. Layout: `lib/core` (theme tokens, config, build info), `lib/models`, `lib/services` (API client, reminder scheduling and sync), `lib/providers`, `lib/screens`. Tests mirror `lib/` under `test/`, with fakes in `test/fakes/`.
+Flutter (stable) for iOS and Android. Provider + ChangeNotifier. `http`, `flutter_local_notifications` + `timezone`, `shared_preferences`, `flutter_dotenv`. Android sharing is a `MethodChannel` to a share intent in `MainActivity`, not a plugin (the channel name is pinned in `test/release_config_test.dart`). Layout: `lib/core` (theme tokens, config, build info), `lib/models`, `lib/services` (API client, reminder scheduling and sync), `lib/providers`, `lib/screens`. Tests mirror `lib/` under `test/`, with fakes in `test/fakes/`.
 
 ## Run, test, analyse
 `.env` is a declared Flutter asset, so every flutter command fails without it:
