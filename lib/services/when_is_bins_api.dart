@@ -3,9 +3,11 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../core/app_config.dart';
 import '../models/address_lookup.dart';
 import '../models/lookup.dart';
 import '../models/schedule.dart';
+import 'timeout_http_client.dart';
 
 /// An error returned by the WhenIsBins API.
 class ApiException implements Exception {
@@ -97,6 +99,16 @@ class WhenIsBinsApi {
     this.timeout = defaultTimeout,
     this.waitTimeout = defaultWaitTimeout,
   }) : _client = client;
+
+  /// The client the app ships with, from `.env`. Built by the app on launch
+  /// and by the background re-check in its own isolate.
+  factory WhenIsBinsApi.fromConfig() => WhenIsBinsApi(
+        // Nothing in package:http times out by default: without this a hung
+        // connection leaves the app loading for ever.
+        client: TimeoutHttpClient(http.Client()),
+        baseUrl: AppConfig.baseUrl,
+        token: AppConfig.apiToken,
+      );
 
   /// How long a single request may take before it is abandoned.
   static const defaultTimeout = Duration(seconds: 15);

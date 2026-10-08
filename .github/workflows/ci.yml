@@ -88,6 +88,20 @@ jobs:
             "The boot receiver is missing, so reminders do not survive a restart."
           absent "SCHEDULE_EXACT_ALARM" \
             "The exact-alarm permission is declared but reminders are scheduled with inexactAllowWhileIdle."
+          absent "android.permission.FOREGROUND_SERVICE" \
+            "A foreground-service permission ships. WorkManager declares them for long-running workers; the background schedule re-check never runs in the foreground, and a typed FOREGROUND_SERVICE_* permission needs a Play Console declaration. Strip it with tools:node=\"remove\" in src/main/AndroidManifest.xml."
+          absent "androidx.work.impl.foreground.SystemForegroundService" \
+            "WorkManager's foreground service ships, but the background re-check never uses it."
+          check "androidx.work.impl.background.systemjob.SystemJobService" \
+            "WorkManager's job service is missing, so the daily background re-check of the schedule never runs."
+
+          # WorkManager stores the worker's class name and instantiates it by
+          # reflection, so R8 must keep that name.
+          MAPPING=build/app/outputs/mapping/release/mapping.txt
+          if ! grep -q "^dev.fluttercommunity.workmanager.BackgroundWorker -> dev.fluttercommunity.workmanager.BackgroundWorker:" "$MAPPING"; then
+            echo "::error::R8 renamed dev.fluttercommunity.workmanager.BackgroundWorker, so WorkManager cannot start the background re-check."
+            exit 1
+          fi
 
           echo "Release manifest assertions passed."
 
