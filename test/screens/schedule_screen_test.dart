@@ -15,6 +15,7 @@ import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/schedule_screen.dart';
 import 'package:when_is_bin_app/services/reminder_sync_service.dart';
+import 'package:when_is_bin_app/services/share_sheet.dart';
 import 'package:when_is_bin_app/services/when_is_bins_api.dart';
 
 import '../fakes/fake_api.dart';
@@ -252,6 +253,23 @@ void main() {
 
     expect(switchValue(tester), isTrue);
     expect(find.text('Reminders on'), findsOneWidget);
+  });
+
+  testWidgets('says reminders only know the published dates', (tester) async {
+    // A reminder states the council's published plan, not a promise that the
+    // lorry comes. Keep the gap between trusting the app and trusting the
+    // collection visible where reminders are switched on.
+    final settings = await makeSettings();
+
+    await tester.pumpWidget(buildApp(settings, sync()));
+
+    expect(
+      find.text(
+        'Reminders follow the dates your council publishes. A collection '
+        'can still be delayed on the day.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('turning reminders on schedules them and persists the switch',
@@ -670,10 +688,12 @@ void main() {
 
     late List<String> launched;
     late List<String> clipboard;
+    late List<Map<Object?, Object?>> shared;
 
     setUp(() {
       launched = [];
       clipboard = [];
+      shared = [];
     });
 
     /// Runs [body] with the platform the widgets see pinned to [platform].
@@ -720,6 +740,21 @@ void main() {
       );
     }
 
+    /// Captures what the app hands to the Android share sheet, answering as
+    /// the platform would: true once the sheet is up, false when it could not
+    /// be shown.
+    void mockShare(WidgetTester tester, {bool shown = true}) {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        const MethodChannel(shareChannelName),
+        (call) async {
+          if (call.method == 'share') {
+            shared.add(call.arguments as Map<Object?, Object?>);
+          }
+          return shown;
+        },
+      );
+    }
+
     Future<void> tapCalendarAction(WidgetTester tester, Finder action) async {
       await tester.ensureVisible(action);
       await tester.pump();
@@ -739,12 +774,12 @@ void main() {
 
         expect(launched, ['webcal://whenisbins.com/100023336956.ics'],
             reason: 'webcal is what makes iOS offer to subscribe');
+        expect(find.text('Send yourself the link'), findsNothing,
+            reason: 'iOS subscribes on the phone, so there is nothing to send');
       });
     });
 
-    testWidgets('on Android it offers the link to copy instead',
-        (tester) async {
-      mockClipboard(tester);
+    testWidgets('on Android it says the feed needs a computer', (tester) async {
       final settings = await makeSettings();
 
       await onPlatform(TargetPlatform.android, () async {
@@ -752,15 +787,72 @@ void main() {
           buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
         );
 
-        final action = find.text('Copy calendar link');
-        expect(action, findsOneWidget);
-        expect(find.text('Paste it into your calendar app.'), findsOneWidget);
+        // The Google Calendar app cannot add a feed by URL; only the website
+        // on a computer can. "Paste it into your calendar app" sent people
+        // looking for an option that does not exist.
+        expect(
+          find.text(
+            'The Google Calendar app can\u2019t add a calendar feed. Send '
+            'yourself the link and add it from a computer.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Paste it into your calendar app.'), findsNothing);
         expect(find.text('Open calendar feed'), findsNothing,
             reason: 'Android has no handler for a webcal or .ics URL');
+      });
+    });
 
-        await tapCalendarAction(tester, action);
+    testWidgets('on Android it sends the link with the steps to add it',
+        (tester) async {
+      mockShare(tester);
+      final settings = await makeSettings();
+
+      await onPlatform(TargetPlatform.android, () async {
+        await tester.pumpWidget(
+          buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
+        );
+        await tapCalendarAction(tester, find.text('Send yourself the link'));
+
+        expect(shared, hasLength(1));
+        expect(shared.single['subject'], 'Bin collection calendar');
+        final text = shared.single['text'] as String;
+        expect(text, contains(calendarUrl));
+        expect(text, contains('calendar.google.com'));
+        expect(text, contains('From URL'));
+      });
+    });
+
+    testWidgets('on Android the link can still be copied', (tester) async {
+      mockClipboard(tester);
+      final settings = await makeSettings();
+
+      await onPlatform(TargetPlatform.android, () async {
+        await tester.pumpWidget(
+          buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
+        );
+        await tapCalendarAction(tester, find.text('Copy link'));
 
         expect(clipboard, [calendarUrl]);
+      });
+    });
+
+    testWidgets('on Android it says so when the share sheet cannot open',
+        (tester) async {
+      mockShare(tester, shown: false);
+      final settings = await makeSettings();
+
+      await onPlatform(TargetPlatform.android, () async {
+        await tester.pumpWidget(
+          buildScheduleApp(settings, schedule(calendarUrl: calendarUrl)),
+        );
+        await tapCalendarAction(tester, find.text('Send yourself the link'));
+        await tester.pump();
+
+        expect(
+          find.text('Sharing isn\u2019t available. Copy the link instead.'),
+          findsOneWidget,
+        );
       });
     });
   });

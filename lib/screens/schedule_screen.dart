@@ -12,6 +12,7 @@ import '../providers/lookup_provider.dart';
 import '../providers/settings_provider.dart';
 import '../services/reminder_scheduler.dart';
 import '../services/reminder_sync_service.dart';
+import '../services/share_sheet.dart';
 import 'settings_screen.dart';
 
 /// Shows the bin collection schedule and lets the user set reminders.
@@ -391,6 +392,7 @@ class _ReminderCard extends StatelessWidget {
         ? '9:00am on the day before'
         : '7:00pm on the day before';
     final canSchedule = !provisional;
+    final muted = AppColors.mutedFor(Theme.of(context).brightness);
 
     return _InsetCard(
       child: Column(
@@ -403,10 +405,16 @@ class _ReminderCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'You\u2019ll get a notification at $timeLabel.',
-            style: TextStyle(
-              fontSize: 16,
-              color: AppColors.mutedFor(Theme.of(context).brightness),
-            ),
+            style: TextStyle(fontSize: 16, color: muted),
+          ),
+          const SizedBox(height: 8),
+          // A reminder states the council's published plan, not a promise
+          // that the lorry comes. Say so where reminders are switched on, so a
+          // late collection isn't read as the app getting it wrong.
+          Text(
+            'Reminders follow the dates your council publishes. A collection '
+            'can still be delayed on the day.',
+            style: TextStyle(fontSize: 16, color: muted),
           ),
           const SizedBox(height: 12),
           Row(
@@ -448,8 +456,10 @@ class _CalendarCard extends StatelessWidget {
   final String calendarUrl;
 
   /// iOS hands a `webcal://` URL to Calendar, which offers to subscribe to it.
-  /// Android has no handler for that scheme (or for a `.ics` file), so there
-  /// the user is given the link to paste into their own calendar app.
+  /// Android has no handler for that scheme (or for a `.ics` file), and the
+  /// Google Calendar app cannot add a feed by URL at all: only its website on
+  /// a computer can. So there the user sends the link to themselves, with the
+  /// steps, and finishes on a computer.
   bool get _subscribesInCalendar =>
       defaultTargetPlatform == TargetPlatform.iOS;
 
@@ -457,6 +467,36 @@ class _CalendarCard extends StatelessWidget {
   String get _subscribeUrl => calendarUrl.startsWith('https://')
       ? 'webcal://${calendarUrl.substring('https://'.length)}'
       : calendarUrl;
+
+  /// What lands in the user's inbox (or wherever they send it): the link, and
+  /// Google Calendar's own steps for adding it, since they will read it away
+  /// from the app.
+  String get _shareText =>
+      'Here\u2019s the link to your bin collection calendar:\n'
+      '$calendarUrl\n'
+      '\n'
+      'To add it to Google Calendar on a computer:\n'
+      '1. Go to calendar.google.com\n'
+      '2. Next to Other calendars, click +\n'
+      '3. Choose From URL, paste the link and click Add calendar\n'
+      '\n'
+      'It then shows up in the Google Calendar app on your phone. If it '
+      'doesn\u2019t, turn on Sync for it in the app\u2019s settings.';
+
+  Future<void> _sendLink(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final shown = await const ShareSheet().share(
+      text: _shareText,
+      subject: 'Bin collection calendar',
+    );
+    if (!shown) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Sharing isn\u2019t available. Copy the link instead.'),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -471,12 +511,12 @@ class _CalendarCard extends StatelessWidget {
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Subscribe to your bin collection calendar feed.',
-            style: TextStyle(fontSize: 16, color: muted),
-          ),
-          const SizedBox(height: 12),
-          if (_subscribesInCalendar)
+          if (_subscribesInCalendar) ...[
+            Text(
+              'Subscribe to your bin collection calendar feed.',
+              style: TextStyle(fontSize: 16, color: muted),
+            ),
+            const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () => launchUrl(
                 Uri.parse(_subscribeUrl),
@@ -484,18 +524,25 @@ class _CalendarCard extends StatelessWidget {
               ),
               icon: const Icon(Icons.calendar_today_outlined),
               label: const Text('Open calendar feed'),
-            )
-          else ...[
+            ),
+          ] else ...[
+            Text(
+              'The Google Calendar app can\u2019t add a calendar feed. Send '
+              'yourself the link and add it from a computer.',
+              style: TextStyle(fontSize: 16, color: muted),
+            ),
+            const SizedBox(height: 12),
             OutlinedButton.icon(
+              onPressed: () => _sendLink(context),
+              icon: const Icon(Icons.send_outlined),
+              label: const Text('Send yourself the link'),
+            ),
+            const SizedBox(height: 4),
+            TextButton.icon(
               onPressed: () =>
                   Clipboard.setData(ClipboardData(text: calendarUrl)),
               icon: const Icon(Icons.link_outlined),
-              label: const Text('Copy calendar link'),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Paste it into your calendar app.',
-              style: TextStyle(fontSize: 16, color: muted),
+              label: const Text('Copy link'),
             ),
           ],
         ],
