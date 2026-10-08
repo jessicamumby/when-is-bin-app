@@ -2,7 +2,7 @@
 
 A user who relies on reminders may not open the app for weeks, so the saved schedule is re-checked on three triggers: every cold launch (always), coming back to the app (only if the last check is 12 hours old or more), and a background task (Android WorkManager about once a day with a network; iOS BGAppRefreshTask whenever iOS allows). A moved collection is saved, the reminders follow it, and Settings shows `Dates last checked: <weekday d Month, HH:mm>` under the saved address.
 
-Mapped, not yet driven. The unit and widget tests cover the logic (`test/services/schedule_recheck_service_test.dart`, `test/services/background_refresh_test.dart`, the resume group in `test/main_test.dart`). What only a device can show is that the OS actually runs the task and the plugins work in the background isolate on a release build.
+`bg-stamp` and `bg-resume` are driven on rung 1 by `integration_test/verify/recheck_resume_test.dart` (first passed 8 October 2026 at e9b9936). The Android job and the iOS task are mapped, not yet driven. The unit and widget tests cover the logic (`test/services/schedule_recheck_service_test.dart`, `test/services/background_refresh_test.dart`, the resume group in `test/main_test.dart`). What only a device can show is that the OS actually runs the task and the plugins work in the background isolate on a release build.
 
 ## Sub-features
 
@@ -24,7 +24,15 @@ Preconditions: baseline from [README](./README.md), doctor passed, an onboarded 
 The 12-hour interval is the obstacle: a check right after onboarding is turned away. Move the clock, not the code.
 
 - **bg-stamp (rung 1).** After onboarding, open Settings: `Dates last checked: <today>, <time of the lookup>`. Screenshot `bg-stamp.png`.
-- **bg-resume (rung 1, simulator).** The simulator uses the Mac's clock, so arrange an old check time in the drive instead: save the address and schedule through `SettingsProvider` as `reminders_switch_after_permission_test.dart` does, then `prefs.setString('schedule_checked_at', DateTime.now().toUtc().subtract(const Duration(hours: 13)).toIso8601String())` before `app.main()`. Background and resume (`xcrun simctl launch` another app, then relaunch When Is Bins, or drive `handleAppLifecycleStateChanged`). Settings then shows the resume time. The cold launch also checks (always), so read the stamp after the launch check and before the resume, and compare.
+- **bg-stamp and bg-resume (rung 1, simulator).** One drive, no extra arranging:
+
+  ```bash
+  ( set -o pipefail; RUN_DIR="$RUN_DIR" flutter drive --driver=test_driver/integration_test.dart \
+    --target=integration_test/verify/recheck_resume_test.dart -d "$UDID" --keep-app-running \
+    --dart-define=GIT_SHA=$(git rev-parse --short HEAD) 2>&1 | tee "$RUN_DIR/drive.log" ); echo "exit=$?" >> "$RUN_DIR/drive.log"
+  ```
+
+  It saves a fixture schedule against Cambridge Central Library's real token (`p:8ccd92739644bc77`), a public building the API answers with `404 no_schedule`. The app counts that as a completed check, so `schedule_checked_at` moves only when the API really answered. The drive starts the stamp two days old, waits for the launch check to move it, sets it 13 hours old, backgrounds and returns (`handleAppLifecycleStateChanged`), expects a fresh stamp, then returns again at once and expects no change. It costs two API requests. Expect `VERIFY state resume after 13h: schedule_checked_at=<now>` and `resume within 12h: ... (unchanged=true)`, then Settings `Dates last checked: <today, time>` and `Build <sha>`. The bin-days screenshot also shows the collection after next, the reminder caveat and the iOS calendar card. For a read-back outside the test binding, terminate the app, `plutil -p` the prefs plist, cold-launch with `xcrun simctl launch`, terminate again, and check that `flutter.schedule_checked_at` moved. Use `plutil -p`, not `-extract`: the dot in `flutter.` reads as a key path.
 - **bg-android-job (emulator `Medium_Phone_API_36.1`, release).**
   1. `flutter build apk --release --dart-define=GIT_SHA=$(git rev-parse --short HEAD) && adb install -r build/app/outputs/flutter-apk/app-release.apk`. Onboard by hand. Settings: `Build <sha>`, note the `Dates last checked` time.
   2. Move the emulator clock forward 13 hours: Settings app, System, Date & time, turn off automatic time, set the time by hand. (No root needed.)
@@ -50,6 +58,8 @@ The 12-hour interval is the obstacle: a check right after onboarding is turned a
 - Cross-check: `flutter.schedule_checked_at` (an ISO 8601 UTC string) from the prefs plist (iOS) or `FlutterSharedPreferences.xml` (Android debug), which must match the Settings line in local time.
 
 ## Gotchas
+
+- In a drive, never pump between lifecycle states. While the app is hidden or paused the binding schedules no frames, so a `pump()` there never returns and the drive hangs until killed. Send the whole sequence, then pump once after `resumed`.
 
 - Every check is an API request against the per-IP allowance; a rate-limited check fails silently and leaves `Dates last checked` unchanged, by design. That is INCONCLUSIVE, not a pass.
 - `Dates last checked` moves on a 304 too: it records that the app asked, not that anything changed.

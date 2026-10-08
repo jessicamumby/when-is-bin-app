@@ -84,6 +84,8 @@ States: first launch, loading (button spinner while the alert is open), after th
 
 ## Gotchas
 
+- `VERIFY_ADDRESS` cannot be a public building. Councils run no household collection there, so the lookup ends in `property_dates_unavailable`, the app shows that as a snackbar, and the drive times out on the address picker. This happened on 8 October 2026 with CB2 3QD Central Library. With homes off limits, onboarding needs a postcode-only council for now.
+
 - `simctl privacy` has no notifications service; the alert must be answered on screen. Don't edit the simulator's BulletinBoard files to fake a grant: that injects the state under test.
 - Reminders exist only for collections at least a reminder-time ahead. A schedule with nothing upcoming, or a provisional one, legitimately yields zero pending: check the bin-days screen before calling it NOT VERIFIED.
 - Read pending notifications by polling for a few seconds: turning the switch on also fires the app-level re-sync (cancel, then re-add), and an immediate read once returned 0 mid-sync.
