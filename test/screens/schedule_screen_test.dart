@@ -969,6 +969,113 @@ void main() {
     );
   });
 
+  group('the collection after the next one', () {
+    final isoDate = DateFormat('yyyy-MM-dd');
+
+    String isoIn(int days) =>
+        isoDate.format(DateTime.now().add(Duration(days: days)));
+
+    String labelIn(int days) =>
+        DateFormat('EEEE d MMMM yyyy').format(DateTime.parse(isoIn(days)));
+
+    /// A schedule collecting one bin on each day, counted from today, in the
+    /// order given.
+    Schedule scheduleOn(List<(int, String)> days) {
+      return Schedule(
+        propertyId: 'p:4c5ee6c2f2c7c959',
+        addressMatch: 'exact',
+        collections: [
+          for (final (offset, bin) in days)
+            Collection(name: bin, wasteType: 'refuse', dates: [isoIn(offset)]),
+        ],
+        byDate: [
+          for (final (offset, bin) in days)
+            ByDateEntry(
+              date: isoIn(offset),
+              weekday: DateFormat('EEEE').format(DateTime.parse(isoIn(offset))),
+              collections: [ByDateCollection(name: bin, wasteType: 'refuse')],
+            ),
+        ],
+      );
+    }
+
+    testWidgets('shows the following collection under the next one',
+        (tester) async {
+      // Alternate-week households need to know which bin goes out the week
+      // after, not just this week.
+      final settings = await makeSettings();
+
+      await tester.pumpWidget(
+        buildScheduleApp(
+          settings,
+          scheduleOn([(3, 'Black bin'), (10, 'Recycling')]),
+        ),
+      );
+
+      expect(find.text(labelIn(3)), findsOneWidget);
+      expect(find.text('Put out: Black bin'), findsOneWidget);
+      expect(find.text('After that'), findsOneWidget);
+      expect(find.text(labelIn(10)), findsOneWidget);
+      expect(find.text('Recycling'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text(labelIn(10))).dy,
+        greaterThan(tester.getTopLeft(find.text('Put out: Black bin')).dy),
+      );
+    });
+
+    testWidgets('says nothing more when only one date is published',
+        (tester) async {
+      final settings = await makeSettings();
+
+      await tester.pumpWidget(
+        buildScheduleApp(settings, scheduleOn([(3, 'Black bin')])),
+      );
+
+      expect(find.text(labelIn(3)), findsOneWidget);
+      expect(find.text('After that'), findsNothing);
+    });
+
+    testWidgets('counts from today, skipping collections already past',
+        (tester) async {
+      final settings = await makeSettings();
+
+      await tester.pumpWidget(
+        buildScheduleApp(
+          settings,
+          scheduleOn([
+            (-4, 'Recycling'),
+            (3, 'Black bin'),
+            (10, 'Garden waste'),
+          ]),
+        ),
+      );
+
+      expect(find.text(labelIn(-4)), findsNothing);
+      expect(find.text(labelIn(3)), findsOneWidget);
+      expect(find.text(labelIn(10)), findsOneWidget);
+      expect(find.text('Garden waste'), findsOneWidget);
+    });
+
+    testWidgets('orders the dates itself rather than trusting the feed',
+        (tester) async {
+      final settings = await makeSettings();
+
+      await tester.pumpWidget(
+        buildScheduleApp(
+          settings,
+          scheduleOn([(10, 'Recycling'), (3, 'Black bin')]),
+        ),
+      );
+
+      expect(find.text('Put out: Black bin'), findsOneWidget);
+      expect(find.text('Recycling'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Recycling')).dy,
+        greaterThan(tester.getTopLeft(find.text('Put out: Black bin')).dy),
+      );
+    });
+  });
+
   testWidgets('labels a provisional schedule as still being checked',
       (tester) async {
     final settings = await makeSettings();
