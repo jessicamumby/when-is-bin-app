@@ -140,6 +140,7 @@ void main() {
     await _hold(tester, _beat);
     await tester.tap(find.text('Morning before (9:00am)'));
     await _hold(tester, const Duration(milliseconds: 700));
+    await shot(binding, tester, 'ad-05a-morning-chosen');
     await tester.tap(find.text('Evening before (7:00pm)'));
     await _hold(tester, const Duration(milliseconds: 900));
     await shot(binding, tester, 'ad-05b-evening-chosen');
