@@ -9,6 +9,15 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Flutter 3.47's analysis_options migration adds these on every `pub get` when
+# they are missing: build output and the native platform folders hold no Dart
+# source to analyse.
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - ios/**
+
 linter:
   rules:
     # prefer_initializing_formals fires on private fields initialised from a

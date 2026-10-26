@@ -25,6 +25,39 @@ String _backgroundTaskId() {
   return id ?? '';
 }
 
+/// The version of [package] that pubspec.lock pins, or null if it is absent.
+String? _lockedVersion(String package) {
+  final entry = RegExp(
+    '^  ${RegExp.escape(package)}:\\n(?:    .*\\n|      .*\\n)*?'
+    '    version: "([^"]+)"',
+    multiLine: true,
+  ).firstMatch(_read('pubspec.lock'));
+  return entry?.group(1);
+}
+
+/// Whether dotted [version] is at least [minimum], comparing numerically.
+bool _atLeast(String version, String minimum) {
+  List<int> parts(String v) =>
+      v.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+  final a = parts(version);
+  final b = parts(minimum);
+  for (var i = 0; i < a.length || i < b.length; i++) {
+    final x = i < a.length ? a[i] : 0;
+    final y = i < b.length ? b[i] : 0;
+    if (x != y) return x > y;
+  }
+  return true;
+}
+
+/// Every GitHub Actions workflow in the repo.
+List<String> _workflows() => (Directory('.github/workflows')
+        .listSync()
+        .whereType<File>()
+        .map((f) => f.path)
+        .where((p) => p.endsWith('.yml') || p.endsWith('.yaml'))
+        .toList()
+      ..sort());
+
 /// The `<array>` of strings that follows [key] in a plist, past any comment.
 List<String> _plistArray(String plist, String key) {
   final array = RegExp(
@@ -456,6 +489,18 @@ void main() {
       for (final line in buildLines) {
         expect(line, contains('--dart-define=GIT_SHA='), reason: line.trim());
       }
+    });
+  });
+
+  group('Supply-chain hardening', () {
+    test('holds shared_preferences_android off its broken 2.5.0 rewrite', () {
+      // 2.5.0 and 2.5.1 (the Pigeon-JNI rewrite) crash at startup in Android
+      // release builds with a NoSuchMethodError; only 2.5.2 and later fix it.
+      // A blanket `flutter pub upgrade` would pull them in, and nothing short
+      // of a release build on a device shows the crash.
+      final version = _lockedVersion('shared_preferences_android');
+      expect(version, isNotNull, reason: 'not found in pubspec.lock');
+      expect(const ['2.5.0', '2.5.1'], isNot(contains(version)));
     });
   });
 }
