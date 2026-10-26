@@ -523,5 +523,14 @@ void main() {
         reason: 'the wrapper must verify the distribution it downloads',
       );
     });
+
+    test('the Kotlin Gradle plugin is past CVE-2026-53914', () {
+      // Unsafe deserialisation of Kotlin build-cache metadata, fixed in 2.4.20.
+      final version = RegExp(
+        r'id\("org\.jetbrains\.kotlin\.android"\) version "([0-9.]+)"',
+      ).firstMatch(_read('android/settings.gradle.kts'))?.group(1);
+      expect(version, isNotNull, reason: 'no Kotlin plugin version');
+      expect(_atLeast(version ?? '', '2.4.20'), isTrue, reason: 'KGP $version');
+    });
   });
 }
