@@ -610,5 +610,22 @@ void main() {
         reason: 'every workflow must build on the same Flutter',
       );
     });
+
+    test('Dependabot waits out a 7-day cooldown on every ecosystem', () {
+      // Worm-style package compromises are usually caught and pulled within
+      // days, so no update is proposed until it has been public for a week.
+      final config = _read('.github/dependabot.yml');
+      final ecosystems = RegExp(r'package-ecosystem:\s*(\S+)')
+          .allMatches(config)
+          .map((m) => m.group(1) ?? '')
+          .toList();
+      expect(ecosystems, containsAll(const ['pub', 'gradle', 'github-actions']));
+      final cooldowns = RegExp(r'default-days:\s*(\d+)')
+          .allMatches(config)
+          .map((m) => int.tryParse(m.group(1) ?? '') ?? 0)
+          .toList();
+      expect(cooldowns, hasLength(ecosystems.length));
+      expect(cooldowns, everyElement(greaterThanOrEqualTo(7)));
+    });
   });
 }
