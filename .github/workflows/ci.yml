@@ -22,13 +22,15 @@ jobs:
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
+          # Match the Flutter that release builds are made with locally.
+          flutter-version: 3.47.8
           cache: true
 
       - name: Create .env for tests
         run: cp .env.example .env
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Analyze
         run: flutter analyze
@@ -52,10 +54,17 @@ jobs:
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
+          # Match the Flutter that release builds are made with locally.
+          flutter-version: 3.47.8
           cache: true
 
       - name: Create .env
         run: cp .env.example .env
+
+      # The build step would otherwise resolve packages on its own,
+      # without holding them to pubspec.lock.
+      - name: Install dependencies
+        run: flutter pub get --enforce-lockfile
 
       - name: Refuse to ship an API token inside the bundle
         run: |

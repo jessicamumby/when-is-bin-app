@@ -39,16 +39,18 @@ jobs:
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
+          # Match the Flutter that release builds are made with locally.
+          flutter-version: 3.47.8
           cache: true
 
       - name: Create .env
         run: cp .env.example .env
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Install pods
-        run: cd ios && pod install
+        run: cd ios && pod install --deployment
 
       - name: Build iOS (release, unsigned)
         run: flutter build ios --release --no-codesign --dart-define=GIT_SHA=$(git rev-parse --short HEAD)

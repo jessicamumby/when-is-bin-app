@@ -572,5 +572,43 @@ void main() {
         );
       }
     });
+
+    test('CI builds on one pinned Flutter with exactly the locked packages',
+        () {
+      // `channel: stable` alone floats to whatever Flutter is newest, and a
+      // plain `pub get` silently re-resolves the SDK-pinned packages, so CI
+      // tested a different build from the one that ships.
+      final flutterVersions = <String>{};
+      for (final path in _workflows()) {
+        final workflow = _read(path);
+        final pinned = RegExp(r'flutter-version:\s*(\S+)')
+            .allMatches(workflow)
+            .map((m) => m.group(1) ?? '')
+            .toList();
+        expect(
+          pinned,
+          hasLength('subosito/flutter-action@'.allMatches(workflow).length),
+          reason: '$path: every Flutter set-up must pin flutter-version',
+        );
+        flutterVersions.addAll(pinned);
+        final pubGets = workflow
+            .split('\n')
+            .where((l) => l.contains('flutter pub get'))
+            .toList();
+        expect(pubGets, isNotEmpty, reason: path);
+        for (final line in pubGets) {
+          expect(line, contains('--enforce-lockfile'), reason: line.trim());
+        }
+        for (final line
+            in workflow.split('\n').where((l) => l.contains('pod install'))) {
+          expect(line, contains('--deployment'), reason: line.trim());
+        }
+      }
+      expect(
+        flutterVersions,
+        hasLength(1),
+        reason: 'every workflow must build on the same Flutter',
+      );
+    });
   });
 }
