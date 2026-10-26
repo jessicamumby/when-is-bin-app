@@ -39,7 +39,6 @@ void main() {
     registerFallbackValue(_FakeTZDateTime());
     registerFallbackValue(_FakeNotificationDetails());
     registerFallbackValue(AndroidScheduleMode.inexactAllowWhileIdle);
-    registerFallbackValue(UILocalNotificationDateInterpretation.absoluteTime);
   });
 
   group('NotificationService', () {
@@ -201,11 +200,14 @@ void main() {
     test('initialises without asking for any permission', () async {
       // Permission is asked for in onboarding, never at launch.
       final plugin = MockNotificationsPlugin();
-      when(() => plugin.initialize(any())).thenAnswer((_) async => true);
+      when(() => plugin.initialize(settings: any(named: 'settings')))
+          .thenAnswer((_) async => true);
 
       await NotificationService(plugin: plugin).init();
 
-      final captured = verify(() => plugin.initialize(captureAny())).captured;
+      final captured = verify(
+        () => plugin.initialize(settings: captureAny(named: 'settings')),
+      ).captured;
       expect(captured, [
         isA<InitializationSettings>()
             .having((s) => s.android?.defaultIcon, 'Android icon',
@@ -223,14 +225,12 @@ void main() {
       when(() => plugin.cancelAll()).thenAnswer((_) async {});
       when(
         () => plugin.zonedSchedule(
-          any(),
-          any(),
-          any(),
-          any(),
-          any(),
+          id: any(named: 'id'),
+          title: any(named: 'title'),
+          body: any(named: 'body'),
+          scheduledDate: any(named: 'scheduledDate'),
+          notificationDetails: any(named: 'notificationDetails'),
           androidScheduleMode: any(named: 'androidScheduleMode'),
-          uiLocalNotificationDateInterpretation:
-              any(named: 'uiLocalNotificationDateInterpretation'),
         ),
       ).thenAnswer((_) async {});
 
@@ -252,24 +252,32 @@ void main() {
       verifyInOrder([
         () => plugin.cancelAll(),
         () => plugin.zonedSchedule(
-              0,
-              'Bins out tomorrow',
-              'Put out the Black bin tomorrow.',
-              any(that: _firesAt(DateTime.utc(2026, 10, 27, 19))),
-              any(that: _reminderDetails),
+              id: 0,
+              title: 'Bins out tomorrow',
+              body: 'Put out the Black bin tomorrow.',
+              scheduledDate: any(
+                named: 'scheduledDate',
+                that: _firesAt(DateTime.utc(2026, 10, 27, 19)),
+              ),
+              notificationDetails: any(
+                named: 'notificationDetails',
+                that: _reminderDetails,
+              ),
               androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-              uiLocalNotificationDateInterpretation:
-                  any(named: 'uiLocalNotificationDateInterpretation'),
             ),
         () => plugin.zonedSchedule(
-              1,
-              'Bins out tomorrow',
-              'Put out the Blue bin and Garden waste tomorrow.',
-              any(that: _firesAt(DateTime.utc(2027, 4, 9, 8))),
-              any(that: _reminderDetails),
+              id: 1,
+              title: 'Bins out tomorrow',
+              body: 'Put out the Blue bin and Garden waste tomorrow.',
+              scheduledDate: any(
+                named: 'scheduledDate',
+                that: _firesAt(DateTime.utc(2027, 4, 9, 8)),
+              ),
+              notificationDetails: any(
+                named: 'notificationDetails',
+                that: _reminderDetails,
+              ),
               androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-              uiLocalNotificationDateInterpretation:
-                  any(named: 'uiLocalNotificationDateInterpretation'),
             ),
       ]);
       verifyNoMoreInteractions(plugin);
