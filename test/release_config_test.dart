@@ -532,5 +532,45 @@ void main() {
       expect(version, isNotNull, reason: 'no Kotlin plugin version');
       expect(_atLeast(version ?? '', '2.4.20'), isTrue, reason: 'KGP $version');
     });
+
+    test('CI pins every action to a full commit SHA', () {
+      // A tag can be moved to malicious code after review; a commit SHA
+      // cannot. The trailing comment keeps the human-readable version.
+      for (final path in _workflows()) {
+        final uses = RegExp(r'^\s*(?:-\s*)?uses:\s*(\S+)', multiLine: true)
+            .allMatches(_read(path))
+            .map((m) => m.group(1) ?? '')
+            .toList();
+        expect(uses, isNotEmpty, reason: path);
+        for (final ref in uses) {
+          expect(
+            ref,
+            matches(RegExp(r'^[\w.-]+/[\w./-]+@[0-9a-f]{40}$')),
+            reason: '$path uses $ref, which is not pinned to a commit',
+          );
+        }
+      }
+    });
+
+    test('CI jobs get a read-only token that checkout does not keep', () {
+      for (final path in _workflows()) {
+        final workflow = _read(path);
+        expect(
+          workflow,
+          matches(
+            RegExp(r'^permissions:\s*\n\s+contents: read\s*$', multiLine: true),
+          ),
+          reason: '$path should default its token to read-only',
+        );
+        final checkouts =
+            RegExp(r'uses: actions/checkout@').allMatches(workflow).length;
+        expect(checkouts, greaterThan(0), reason: path);
+        expect(
+          RegExp(r'persist-credentials: false').allMatches(workflow).length,
+          checkouts,
+          reason: '$path: every checkout must drop the token from .git/config',
+        );
+      }
+    });
   });
 }
