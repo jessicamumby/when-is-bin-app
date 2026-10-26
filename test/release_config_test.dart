@@ -391,6 +391,32 @@ void main() {
       expect(int.parse(seconds ?? ''), int.parse(hours ?? '') * 3600);
     });
 
+    test('integrates every plugin through CocoaPods, as Podfile.lock says', () {
+      // Swift Package Manager is on by default in stable Flutter. On a machine
+      // that leaves it on (CI did), four plugins move out of CocoaPods, so the
+      // build no longer matches the committed Podfile.lock or a local release
+      // build. The project setting overrides each machine's global config.
+      expect(
+        _read('pubspec.yaml'),
+        matches(
+          RegExp(
+            r'^flutter:\n(?:  .*\n|\n)*?  config:\n'
+            r'    enable-swift-package-manager: false$',
+            multiLine: true,
+          ),
+        ),
+      );
+      final lock = _read('ios/Podfile.lock');
+      for (final pod in const [
+        'flutter_local_notifications',
+        'shared_preferences_foundation',
+        'url_launcher_ios',
+        'workmanager_apple',
+      ]) {
+        expect(lock, contains('  - $pod ('), reason: '$pod must be a pod');
+      }
+    });
+
     test('is displayed as "When Is Bins"', () {
       expect(plist, contains('<string>When Is Bins</string>'));
     });

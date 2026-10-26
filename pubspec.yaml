@@ -31,6 +31,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Plugins are integrated through CocoaPods (see ios/Podfile.lock) on every
+  # machine and in CI, whatever the global Swift Package Manager setting.
+  config:
+    enable-swift-package-manager: false
   assets:
     - .env
   fonts:
