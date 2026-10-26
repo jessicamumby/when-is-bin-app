@@ -502,5 +502,26 @@ void main() {
       expect(version, isNotNull, reason: 'not found in pubspec.lock');
       expect(const ['2.5.0', '2.5.1'], isNot(contains(version)));
     });
+
+    test('the Gradle wrapper is checksum-pinned and past the 9.8.1 fixes', () {
+      // Below 9.8.1 Gradle keeps using a repository that failed SSL, and its
+      // daemon deserialises untrusted objects (GHSA-j5m7-59rp-24f5,
+      // GHSA-xwqc-3h47-hg64, GHSA-mvvg-497x-hmj8). The checksum makes the
+      // wrapper refuse a distribution that does not match gradle.org's.
+      final properties =
+          _read('android/gradle/wrapper/gradle-wrapper.properties');
+      final version = RegExp(r'gradle-([0-9.]+)-(?:all|bin)\.zip')
+          .firstMatch(properties)
+          ?.group(1);
+      expect(version, isNotNull, reason: 'no distributionUrl version');
+      expect(_atLeast(version ?? '', '9.8.1'), isTrue, reason: 'Gradle $version');
+      expect(
+        properties,
+        matches(
+          RegExp(r'^distributionSha256Sum=[0-9a-f]{64}$', multiLine: true),
+        ),
+        reason: 'the wrapper must verify the distribution it downloads',
+      );
+    });
   });
 }
