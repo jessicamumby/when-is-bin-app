@@ -10,15 +10,17 @@ void main() {
         () {
       // Store and CI builds bundle exactly this file (`cp .env.example .env`),
       // so it must parse to no token and the whenisbins.com base URL.
-      dotenv.testLoad(fileInput: File('.env.example').readAsStringSync());
+      dotenv.loadFromString(
+        envString: File('.env.example').readAsStringSync(),
+      );
 
       expect(AppConfig.apiToken, isNull);
       expect(Uri.parse(AppConfig.baseUrl).host, 'whenisbins.com');
     });
 
     test('empty values fall back to the default URL and no token', () {
-      dotenv.testLoad(
-        fileInput: 'WHENISBINS_BASE_URL=\nWHENISBINS_API_TOKEN=\n',
+      dotenv.loadFromString(
+        envString: 'WHENISBINS_BASE_URL=\nWHENISBINS_API_TOKEN=\n',
       );
 
       expect(AppConfig.baseUrl, 'https://whenisbins.com/v1');
@@ -26,7 +28,9 @@ void main() {
     });
 
     test('passes a configured token through', () {
-      dotenv.testLoad(fileInput: 'WHENISBINS_API_TOKEN=not-a-real-token\n');
+      dotenv.loadFromString(
+        envString: 'WHENISBINS_API_TOKEN=not-a-real-token\n',
+      );
 
       expect(AppConfig.apiToken, 'not-a-real-token');
     });
