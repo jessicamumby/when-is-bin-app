@@ -25,6 +25,39 @@ String _backgroundTaskId() {
   return id ?? '';
 }
 
+/// The version of [package] that pubspec.lock pins, or null if it is absent.
+String? _lockedVersion(String package) {
+  final entry = RegExp(
+    '^  ${RegExp.escape(package)}:\\n(?:    .*\\n|      .*\\n)*?'
+    '    version: "([^"]+)"',
+    multiLine: true,
+  ).firstMatch(_read('pubspec.lock'));
+  return entry?.group(1);
+}
+
+/// Whether dotted [version] is at least [minimum], comparing numerically.
+bool _atLeast(String version, String minimum) {
+  List<int> parts(String v) =>
+      v.split('.').map((p) => int.tryParse(p) ?? 0).toList();
+  final a = parts(version);
+  final b = parts(minimum);
+  for (var i = 0; i < a.length || i < b.length; i++) {
+    final x = i < a.length ? a[i] : 0;
+    final y = i < b.length ? b[i] : 0;
+    if (x != y) return x > y;
+  }
+  return true;
+}
+
+/// Every GitHub Actions workflow in the repo.
+List<String> _workflows() => (Directory('.github/workflows')
+        .listSync()
+        .whereType<File>()
+        .map((f) => f.path)
+        .where((p) => p.endsWith('.yml') || p.endsWith('.yaml'))
+        .toList()
+      ..sort());
+
 /// The `<array>` of strings that follows [key] in a plist, past any comment.
 List<String> _plistArray(String plist, String key) {
   final array = RegExp(
@@ -358,6 +391,32 @@ void main() {
       expect(int.parse(seconds ?? ''), int.parse(hours ?? '') * 3600);
     });
 
+    test('integrates every plugin through CocoaPods, as Podfile.lock says', () {
+      // Swift Package Manager is on by default in stable Flutter. On a machine
+      // that leaves it on (CI did), four plugins move out of CocoaPods, so the
+      // build no longer matches the committed Podfile.lock or a local release
+      // build. The project setting overrides each machine's global config.
+      expect(
+        _read('pubspec.yaml'),
+        matches(
+          RegExp(
+            r'^flutter:\n(?:  .*\n|\n)*?  config:\n'
+            r'    enable-swift-package-manager: false$',
+            multiLine: true,
+          ),
+        ),
+      );
+      final lock = _read('ios/Podfile.lock');
+      for (final pod in const [
+        'flutter_local_notifications',
+        'shared_preferences_foundation',
+        'url_launcher_ios',
+        'workmanager_apple',
+      ]) {
+        expect(lock, contains('  - $pod ('), reason: '$pod must be a pod');
+      }
+    });
+
     test('is displayed as "When Is Bins"', () {
       expect(plist, contains('<string>When Is Bins</string>'));
     });
@@ -456,6 +515,143 @@ void main() {
       for (final line in buildLines) {
         expect(line, contains('--dart-define=GIT_SHA='), reason: line.trim());
       }
+    });
+  });
+
+  group('Supply-chain hardening', () {
+    test('holds shared_preferences_android off its broken 2.5.0 rewrite', () {
+      // 2.5.0 and 2.5.1 (the Pigeon-JNI rewrite) crash at startup in Android
+      // release builds with a NoSuchMethodError; only 2.5.2 and later fix it.
+      // A blanket `flutter pub upgrade` would pull them in, and nothing short
+      // of a release build on a device shows the crash.
+      final version = _lockedVersion('shared_preferences_android');
+      expect(version, isNotNull, reason: 'not found in pubspec.lock');
+      expect(const ['2.5.0', '2.5.1'], isNot(contains(version)));
+    });
+
+    test('the Gradle wrapper is checksum-pinned and past the 9.8.1 fixes', () {
+      // Below 9.8.1 Gradle keeps using a repository that failed SSL, and its
+      // daemon deserialises untrusted objects (GHSA-j5m7-59rp-24f5,
+      // GHSA-xwqc-3h47-hg64, GHSA-mvvg-497x-hmj8). The checksum makes the
+      // wrapper refuse a distribution that does not match gradle.org's.
+      final properties =
+          _read('android/gradle/wrapper/gradle-wrapper.properties');
+      final version = RegExp(r'gradle-([0-9.]+)-(?:all|bin)\.zip')
+          .firstMatch(properties)
+          ?.group(1);
+      expect(version, isNotNull, reason: 'no distributionUrl version');
+      expect(_atLeast(version ?? '', '9.8.1'), isTrue, reason: 'Gradle $version');
+      expect(
+        properties,
+        matches(
+          RegExp(r'^distributionSha256Sum=[0-9a-f]{64}$', multiLine: true),
+        ),
+        reason: 'the wrapper must verify the distribution it downloads',
+      );
+    });
+
+    test('the Kotlin Gradle plugin is past CVE-2026-53914', () {
+      // Unsafe deserialisation of Kotlin build-cache metadata, fixed in 2.4.20.
+      final version = RegExp(
+        r'id\("org\.jetbrains\.kotlin\.android"\) version "([0-9.]+)"',
+      ).firstMatch(_read('android/settings.gradle.kts'))?.group(1);
+      expect(version, isNotNull, reason: 'no Kotlin plugin version');
+      expect(_atLeast(version ?? '', '2.4.20'), isTrue, reason: 'KGP $version');
+    });
+
+    test('CI pins every action to a full commit SHA', () {
+      // A tag can be moved to malicious code after review; a commit SHA
+      // cannot. The trailing comment keeps the human-readable version.
+      for (final path in _workflows()) {
+        final uses = RegExp(r'^\s*(?:-\s*)?uses:\s*(\S+)', multiLine: true)
+            .allMatches(_read(path))
+            .map((m) => m.group(1) ?? '')
+            .toList();
+        expect(uses, isNotEmpty, reason: path);
+        for (final ref in uses) {
+          expect(
+            ref,
+            matches(RegExp(r'^[\w.-]+/[\w./-]+@[0-9a-f]{40}$')),
+            reason: '$path uses $ref, which is not pinned to a commit',
+          );
+        }
+      }
+    });
+
+    test('CI jobs get a read-only token that checkout does not keep', () {
+      for (final path in _workflows()) {
+        final workflow = _read(path);
+        expect(
+          workflow,
+          matches(
+            RegExp(r'^permissions:\s*\n\s+contents: read\s*$', multiLine: true),
+          ),
+          reason: '$path should default its token to read-only',
+        );
+        final checkouts =
+            RegExp(r'uses: actions/checkout@').allMatches(workflow).length;
+        expect(checkouts, greaterThan(0), reason: path);
+        expect(
+          RegExp(r'persist-credentials: false').allMatches(workflow).length,
+          checkouts,
+          reason: '$path: every checkout must drop the token from .git/config',
+        );
+      }
+    });
+
+    test('CI builds on one pinned Flutter with exactly the locked packages',
+        () {
+      // `channel: stable` alone floats to whatever Flutter is newest, and a
+      // plain `pub get` silently re-resolves the SDK-pinned packages, so CI
+      // tested a different build from the one that ships.
+      final flutterVersions = <String>{};
+      for (final path in _workflows()) {
+        final workflow = _read(path);
+        final pinned = RegExp(r'flutter-version:\s*(\S+)')
+            .allMatches(workflow)
+            .map((m) => m.group(1) ?? '')
+            .toList();
+        expect(
+          pinned,
+          hasLength('subosito/flutter-action@'.allMatches(workflow).length),
+          reason: '$path: every Flutter set-up must pin flutter-version',
+        );
+        flutterVersions.addAll(pinned);
+        final pubGets = workflow
+            .split('\n')
+            .where((l) => l.contains('flutter pub get'))
+            .toList();
+        expect(pubGets, isNotEmpty, reason: path);
+        for (final line in pubGets) {
+          expect(line, contains('--enforce-lockfile'), reason: line.trim());
+        }
+        for (final line
+            in workflow.split('\n').where((l) => l.contains('pod install'))) {
+          expect(line, contains('--deployment'), reason: line.trim());
+        }
+      }
+      expect(
+        flutterVersions,
+        hasLength(1),
+        reason: 'every workflow must build on the same Flutter',
+      );
+    });
+
+    test('Dependabot waits out a 7-day cooldown on every ecosystem', () {
+      // Worm-style package compromises are usually caught and pulled within
+      // days, so no update is proposed until it has been public for a week.
+      final config = _read('.github/dependabot.yml');
+      final ecosystems = RegExp(r'package-ecosystem:\s*(\S+)')
+          .allMatches(config)
+          .map((m) => m.group(1) ?? '')
+          .toList();
+      expect(ecosystems, containsAll(const ['pub', 'gradle', 'github-actions']));
+      final cooldowns = RegExp(r'default-days:\s*(\d+)')
+          .allMatches(config)
+          .map((m) => int.tryParse(m.group(1) ?? '') ?? 0)
+          .toList();
+      expect(cooldowns, hasLength(ecosystems.length));
+      expect(cooldowns, everyElement(greaterThanOrEqualTo(7)));
     });
   });
 }

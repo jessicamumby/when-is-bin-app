@@ -17,6 +17,11 @@ on:
       - '.github/workflows/**'
   workflow_dispatch:
 
+# The jobs only read the repo, so the token cannot push, comment or
+# write packages even if a step is compromised.
+permissions:
+  contents: read
+
 concurrency:
   group: ios-build-${{ github.ref }}
   cancel-in-progress: true
@@ -26,22 +31,26 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Flutter
-        uses: subosito/flutter-action@v2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           channel: stable
+          # Match the Flutter that release builds are made with locally.
+          flutter-version: 3.47.8
           cache: true
 
       - name: Create .env
         run: cp .env.example .env
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Install pods
-        run: cd ios && pod install
+        run: cd ios && pod install --deployment
 
       - name: Build iOS (release, unsigned)
         run: flutter build ios --release --no-codesign --dart-define=GIT_SHA=$(git rev-parse --short HEAD)
