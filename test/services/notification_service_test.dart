@@ -14,7 +14,33 @@ class MockAndroidNotifications extends Mock
 class MockIOSNotifications extends Mock
     implements IOSFlutterLocalNotificationsPlugin {}
 
+class _FakeInitializationSettings extends Fake
+    implements InitializationSettings {}
+
+class _FakeTZDateTime extends Fake implements tz.TZDateTime {}
+
+class _FakeNotificationDetails extends Fake implements NotificationDetails {}
+
+/// A fire time at [utc], built in the UK zone.
+Matcher _firesAt(DateTime utc) => isA<tz.TZDateTime>()
+    .having((d) => d.location.name, 'location', 'Europe/London')
+    .having((d) => d.toUtc(), 'instant', utc);
+
+/// The reminder channel and the default iOS presentation.
+final Matcher _reminderDetails = isA<NotificationDetails>()
+    .having((d) => d.android?.channelId, 'Android channel', 'bin_reminders')
+    .having((d) => d.android?.importance, 'importance', Importance.high)
+    .having((d) => d.android?.priority, 'priority', Priority.high)
+    .having((d) => d.iOS, 'iOS details', isNotNull);
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(_FakeInitializationSettings());
+    registerFallbackValue(_FakeTZDateTime());
+    registerFallbackValue(_FakeNotificationDetails());
+    registerFallbackValue(AndroidScheduleMode.inexactAllowWhileIdle);
+  });
+
   group('NotificationService', () {
     test('builds a notification title and body for a reminder', () {
       final reminder = Reminder(
@@ -167,6 +193,104 @@ void main() {
 
       expect(fireAt.hour, 19);
       expect(fireAt.toUtc().hour, 18);
+    });
+  });
+
+  group('NotificationService plugin calls', () {
+    test('initialises without asking for any permission', () async {
+      // Permission is asked for in onboarding, never at launch.
+      final plugin = MockNotificationsPlugin();
+      when(() => plugin.initialize(settings: any(named: 'settings')))
+          .thenAnswer((_) async => true);
+
+      await NotificationService(plugin: plugin).init();
+
+      final captured = verify(
+        () => plugin.initialize(settings: captureAny(named: 'settings')),
+      ).captured;
+      expect(captured, [
+        isA<InitializationSettings>()
+            .having((s) => s.android?.defaultIcon, 'Android icon',
+                '@mipmap/ic_launcher')
+            .having((s) => s.iOS?.requestAlertPermission, 'alert', isFalse)
+            .having((s) => s.iOS?.requestBadgePermission, 'badge', isFalse)
+            .having((s) => s.iOS?.requestSoundPermission, 'sound', isFalse),
+      ]);
+    });
+
+    test('replaces every reminder with one UK-time notification each',
+        () async {
+      NotificationService.configureLocalTimeZone();
+      final plugin = MockNotificationsPlugin();
+      when(() => plugin.cancelAll()).thenAnswer((_) async {});
+      when(
+        () => plugin.zonedSchedule(
+          id: any(named: 'id'),
+          title: any(named: 'title'),
+          body: any(named: 'body'),
+          scheduledDate: any(named: 'scheduledDate'),
+          notificationDetails: any(named: 'notificationDetails'),
+          androidScheduleMode: any(named: 'androidScheduleMode'),
+        ),
+      ).thenAnswer((_) async {});
+
+      await NotificationService(plugin: plugin).scheduleReminders([
+        // After the October clock change: 7pm GMT is 19:00 UTC.
+        Reminder(
+          collectionDate: DateTime(2026, 10, 28),
+          fireAt: DateTime(2026, 10, 27, 19, 0),
+          binNames: const ['Black bin'],
+        ),
+        // In BST: 9am is 08:00 UTC.
+        Reminder(
+          collectionDate: DateTime(2027, 4, 10),
+          fireAt: DateTime(2027, 4, 9, 9, 0),
+          binNames: const ['Blue bin', 'Garden waste'],
+        ),
+      ]);
+
+      verifyInOrder([
+        () => plugin.cancelAll(),
+        () => plugin.zonedSchedule(
+              id: 0,
+              title: 'Bins out tomorrow',
+              body: 'Put out the Black bin tomorrow.',
+              scheduledDate: any(
+                named: 'scheduledDate',
+                that: _firesAt(DateTime.utc(2026, 10, 27, 19)),
+              ),
+              notificationDetails: any(
+                named: 'notificationDetails',
+                that: _reminderDetails,
+              ),
+              androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            ),
+        () => plugin.zonedSchedule(
+              id: 1,
+              title: 'Bins out tomorrow',
+              body: 'Put out the Blue bin and Garden waste tomorrow.',
+              scheduledDate: any(
+                named: 'scheduledDate',
+                that: _firesAt(DateTime.utc(2027, 4, 9, 8)),
+              ),
+              notificationDetails: any(
+                named: 'notificationDetails',
+                that: _reminderDetails,
+              ),
+              androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            ),
+      ]);
+      verifyNoMoreInteractions(plugin);
+    });
+
+    test('clears every reminder when there are none to schedule', () async {
+      final plugin = MockNotificationsPlugin();
+      when(() => plugin.cancelAll()).thenAnswer((_) async {});
+
+      await NotificationService(plugin: plugin).scheduleReminders(const []);
+
+      verify(() => plugin.cancelAll()).called(1);
+      verifyNoMoreInteractions(plugin);
     });
   });
 }

@@ -96,7 +96,7 @@ class NotificationService implements NotificationScheduler {
       requestSoundPermission: false,
     );
     await _plugin.initialize(
-      const InitializationSettings(android: android, iOS: darwin),
+      settings: const InitializationSettings(android: android, iOS: darwin),
     );
   }
 
@@ -139,11 +139,11 @@ class NotificationService implements NotificationScheduler {
       final reminder = reminders[i];
       final content = buildContent(reminder);
       await _plugin.zonedSchedule(
-        i,
-        content.title,
-        content.body,
-        toTZDateTime(reminder.fireAt),
-        const NotificationDetails(
+        id: i,
+        title: content.title,
+        body: content.body,
+        scheduledDate: toTZDateTime(reminder.fireAt),
+        notificationDetails: const NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,
@@ -154,8 +154,6 @@ class NotificationService implements NotificationScheduler {
           iOS: DarwinNotificationDetails(),
         ),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
       );
     }
   }
