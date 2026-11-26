@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,7 +19,9 @@ import 'support.dart';
 /// in reminders_switch_after_permission_test.dart. The behaviour comes from
 /// real interaction: the user opens Settings from the reminder card, picks
 /// "Late evening (10:00pm)", goes back, and turns reminders on (the
-/// host taps Allow on the iOS alert with scripts/tap_system_button.sh).
+/// host taps Allow on the iOS alert with scripts/tap_system_button.sh; on
+/// Android the host grants the permission with adb first, which also lets
+/// this drive run against a release build).
 ///
 /// iOS does not hand back a pending request's fire time, so this drive proves
 /// the choice is offered, stored and shown, and that reminders are still
@@ -67,12 +71,24 @@ void main() {
         'reminders off, onboarded, reminder time '
         '${prefs.getString('reminder_time') ?? 'unset (evening default)'}');
 
-    final ios = FlutterLocalNotificationsPlugin()
-        .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>();
-    expect(ios, isNotNull, reason: 'PRECONDITION: iOS only.');
-    Future<bool> allowed() async =>
-        (await ios!.checkPermissions())?.isEnabled ?? false;
+    // On Android the host grants the permission before the drive
+    // (`adb shell pm grant <package> android.permission.POST_NOTIFICATIONS`),
+    // so no alert appears and the first switch should hold.
+    final plugin = FlutterLocalNotificationsPlugin();
+    Future<bool> allowed() async {
+      if (Platform.isAndroid) {
+        final android = plugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+        return await android?.areNotificationsEnabled() ?? false;
+      }
+      final ios = plugin.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      return (await ios?.checkPermissions())?.isEnabled ?? false;
+    }
+
+    mark('platform=${Platform.operatingSystem}');
+    // Android screenshots need the Flutter surface rendered to an image.
+    if (Platform.isAndroid) await binding.convertFlutterSurfaceToImage();
 
     app.main();
     await pumpUntil(
