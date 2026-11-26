@@ -9,7 +9,7 @@ A Flutter app for Android and iOS that brings the [whenisbins.com](https://wheni
 ## Features
 
 - **Postcode → address → schedule** lookup via the [WhenIsBins API](https://whenisbins.com/v1/guide)
-- **Native notifications** the night before collection — user chooses 9:00am (morning before) or 7:00pm (evening before)
+- **Native notifications** the night before collection — user chooses 9:00am (morning before), 7:00pm (evening before) or 10:00pm (late evening before)
 - **Calendar option** — subscribe to your property's public `.ics` calendar feed
 - **Saved address** — quick access to your bin days on next launch
 - Design system mirrors whenisbins.com (Lexend Deca, ink/teal/aqua/coral palette, square-cornered controls)

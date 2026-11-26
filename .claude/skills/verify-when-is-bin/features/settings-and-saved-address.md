@@ -8,7 +8,7 @@ Mostly mapped, not yet driven. `reminders_switch_after_permission_test.dart` alr
 
 - `set-relaunch` reopens on "Your bin days" with the saved address after the app is killed.
 - `set-switch` turns reminders off (pending notifications cancelled) and on again (rescheduled).
-- `set-time` moves reminders between 9:00am and 7:00pm the day before.
+- `set-time` moves reminders between 9:00am, 7:00pm and 10:00pm the day before. `set-time-late` (the 10:00pm choice) is driven by `late_evening_reminder_test.dart` on the same fixture pattern.
 - `set-stamp` shows `Build <sha>` at the foot of Settings.
 - `set-remove` removes the saved address and falls back to the search screen (`when·is·bins`).
 
@@ -37,14 +37,14 @@ States: default, after relaunch, selected (reminder time radio), disabled (switc
 
 ## Stable selectors
 
-- Visible copy: `Your bin days`, `Remind me to put the bins out`, `Reminders on`, `Reminders off`, `Change reminder time`, `Morning before (9:00am)`, `Evening before (7:00pm)`, `Remove saved address`, `No address saved.`, `Build `.
+- Visible copy: `Your bin days`, `Remind me to put the bins out`, `Reminders on`, `Reminders off`, `Change reminder time`, `Morning before (9:00am)`, `Evening before (7:00pm)`, `Late evening (10:00pm)`, `Remove saved address`, `No address saved.`, `Build `.
 - Tooltip `Settings` on the app-bar cog (`find.byTooltip('Settings')`).
 - `find.byType(Switch)` is acceptable only because the screen has exactly one switch. Proposed product change: `ValueKey('schedule.reminders')` on it.
 
 ## Evidence and cross-check
 
 - Screenshots: `set-relaunch.png`, `set-stamp.png` (Settings with `Build <sha>`), and one per mutation.
-- Cross-check: prefs plist after a clean relaunch and terminate (`flutter.reminders_enabled`, `flutter.reminder_time` = `morning|evening`, `flutter.saved_address` absent after removal), and the drive's own `pendingNotificationRequests()` lines (count moves with the switch).
+- Cross-check: prefs plist after a clean relaunch and terminate (`flutter.reminders_enabled`, `flutter.reminder_time` = `morning|evening|lateEvening`, `flutter.saved_address` absent after removal), and the drive's own `pendingNotificationRequests()` lines (count moves with the switch).
 
 ## Gotchas
 

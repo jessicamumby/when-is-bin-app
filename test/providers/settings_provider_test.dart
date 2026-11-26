@@ -87,6 +87,37 @@ void main() {
       expect(reloaded.reminderTime, ReminderTime.morning);
     });
 
+    test('persists a late evening reminder time', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final provider = SettingsProvider(prefs);
+
+      await provider.setReminderTime(ReminderTime.lateEvening);
+
+      expect(prefs.getString('reminder_time'), 'lateEvening');
+      final reloaded = SettingsProvider(prefs);
+      expect(reloaded.reminderTime, ReminderTime.lateEvening);
+    });
+
+    test('reads every reminder time back from the name it was stored under',
+        () async {
+      for (final time in ReminderTime.values) {
+        SharedPreferences.setMockInitialValues({'reminder_time': time.name});
+        final provider =
+            SettingsProvider(await SharedPreferences.getInstance());
+
+        expect(provider.reminderTime, time);
+      }
+    });
+
+    test('falls back to the evening for a stored time it does not know',
+        () async {
+      SharedPreferences.setMockInitialValues({'reminder_time': 'midnight'});
+      final provider = SettingsProvider(await SharedPreferences.getInstance());
+
+      expect(provider.reminderTime, ReminderTime.evening);
+    });
+
     test('persists a saved address and postcode', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();

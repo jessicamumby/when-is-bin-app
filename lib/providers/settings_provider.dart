@@ -135,7 +135,10 @@ class SettingsProvider extends ChangeNotifier {
 
   ReminderTime _readReminderTime() {
     final stored = _prefs.getString(_kReminderTime);
-    return stored == 'morning' ? ReminderTime.morning : ReminderTime.evening;
+    for (final time in ReminderTime.values) {
+      if (time.name == stored) return time;
+    }
+    return ReminderTime.evening;
   }
 
   void _readSavedSchedule() {
