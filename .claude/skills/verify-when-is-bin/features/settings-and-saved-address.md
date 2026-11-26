@@ -37,7 +37,7 @@ States: default, after relaunch, selected (reminder time radio), disabled (switc
 
 ## Stable selectors
 
-- Visible copy: `Your bin days`, `Remind me to put the bins out`, `Reminders on`, `Reminders off`, `Change reminder time`, `Morning before (9:00am)`, `Evening before (7:00pm)`, `Late evening before (10:00pm)`, `Remove saved address`, `No address saved.`, `Build `.
+- Visible copy: `Your bin days`, `Remind me to put the bins out`, `Reminders on`, `Reminders off`, `Change reminder time`, `Morning before (9:00am)`, `Evening before (7:00pm)`, `Late evening (10:00pm)`, `Remove saved address`, `No address saved.`, `Build `.
 - Tooltip `Settings` on the app-bar cog (`find.byTooltip('Settings')`).
 - `find.byType(Switch)` is acceptable only because the screen has exactly one switch. Proposed product change: `ValueKey('schedule.reminders')` on it.
 

@@ -16,7 +16,7 @@ import 'support.dart';
 /// ARRANGED through the app's own SettingsProvider before the app starts, as
 /// in reminders_switch_after_permission_test.dart. The behaviour comes from
 /// real interaction: the user opens Settings from the reminder card, picks
-/// "Late evening before (10:00pm)", goes back, and turns reminders on (the
+/// "Late evening (10:00pm)", goes back, and turns reminders on (the
 /// host taps Allow on the iOS alert with scripts/tap_system_button.sh).
 ///
 /// iOS does not hand back a pending request's fire time, so this drive proves
@@ -24,7 +24,7 @@ import 'support.dart';
 /// scheduled with it. The 22:00 fire time itself is pinned by the unit tests
 /// in test/services/reminder_scheduler_test.dart.
 const _gitSha = String.fromEnvironment('GIT_SHA', defaultValue: 'dev');
-const _lateEvening = 'Late evening before (10:00pm)';
+const _lateEvening = 'Late evening (10:00pm)';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();

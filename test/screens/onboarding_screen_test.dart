@@ -368,7 +368,7 @@ void main() {
       expect(find.text('When should we remind you?'), findsOneWidget);
       expect(find.text('Morning before (9:00am)'), findsOneWidget);
       expect(find.text('Evening before (7:00pm)'), findsOneWidget);
-      expect(find.text('Late evening before (10:00pm)'), findsOneWidget);
+      expect(find.text('Late evening (10:00pm)'), findsOneWidget);
       expect(find.text('Turn on reminders'), findsOneWidget);
     });
 
@@ -382,8 +382,8 @@ void main() {
         buildApp(lookup, settings, FakeNotificationService()),
       );
 
-      await tester.ensureVisible(find.text('Late evening before (10:00pm)'));
-      await tester.tap(find.text('Late evening before (10:00pm)'));
+      await tester.ensureVisible(find.text('Late evening (10:00pm)'));
+      await tester.tap(find.text('Late evening (10:00pm)'));
       await tester.ensureVisible(find.text('Turn on reminders'));
       await tester.tap(find.text('Turn on reminders'));
       await tester.pump();

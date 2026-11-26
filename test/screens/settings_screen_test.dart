@@ -50,13 +50,13 @@ void main() {
 
     expect(find.text('Morning before (9:00am)'), findsOneWidget);
     expect(find.text('Evening before (7:00pm)'), findsOneWidget);
-    expect(find.text('Late evening before (10:00pm)'), findsOneWidget);
+    expect(find.text('Late evening (10:00pm)'), findsOneWidget);
   });
 
   testWidgets('choosing late evening stores it', (tester) async {
     await tester.pumpWidget(await app(AppTheme.light));
 
-    await tester.tap(find.text('Late evening before (10:00pm)'));
+    await tester.tap(find.text('Late evening (10:00pm)'));
     await tester.pump();
 
     final prefs = await SharedPreferences.getInstance();

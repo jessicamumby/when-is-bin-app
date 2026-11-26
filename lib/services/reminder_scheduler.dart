@@ -5,7 +5,7 @@
 enum ReminderTime {
   morning(9, 0, 'Morning before', '9:00am'),
   evening(19, 0, 'Evening before', '7:00pm'),
-  lateEvening(22, 0, 'Late evening before', '10:00pm');
+  lateEvening(22, 0, 'Late evening', '10:00pm');
 
   const ReminderTime(this.hour, this.minute, this.title, this.clock);
 
