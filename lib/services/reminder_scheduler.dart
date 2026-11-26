@@ -1,13 +1,26 @@
-/// When the user wants their reminder: the morning before (9am) or the
-/// evening before (7pm) the collection day.
+/// When the user wants their reminder, always on the day before the
+/// collection: morning (9am), evening (7pm) or late evening (10pm).
+///
+/// The value's name is what `SettingsProvider` stores, so never rename one.
 enum ReminderTime {
-  morning(9, 0),
-  evening(19, 0);
+  morning(9, 0, 'Morning before', '9:00am'),
+  evening(19, 0, 'Evening before', '7:00pm'),
+  lateEvening(22, 0, 'Late evening before', '10:00pm');
 
-  const ReminderTime(this.hour, this.minute);
+  const ReminderTime(this.hour, this.minute, this.title, this.clock);
 
   final int hour;
   final int minute;
+
+  /// How the choice is named, such as "Evening before".
+  final String title;
+
+  /// The time as the app writes it, such as "7:00pm".
+  final String clock;
+
+  /// The label on the option the user picks, such as
+  /// "Evening before (7:00pm)".
+  String get optionLabel => '$title ($clock)';
 }
 
 /// A single scheduled reminder for one collection date.

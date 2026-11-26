@@ -14,6 +14,7 @@ import 'package:when_is_bin_app/models/schedule.dart';
 import 'package:when_is_bin_app/providers/lookup_provider.dart';
 import 'package:when_is_bin_app/providers/settings_provider.dart';
 import 'package:when_is_bin_app/screens/schedule_screen.dart';
+import 'package:when_is_bin_app/services/reminder_scheduler.dart';
 import 'package:when_is_bin_app/services/reminder_sync_service.dart';
 import 'package:when_is_bin_app/services/share_sheet.dart';
 import 'package:when_is_bin_app/services/when_is_bins_api.dart';
@@ -253,6 +254,19 @@ void main() {
 
     expect(switchValue(tester), isTrue);
     expect(find.text('Reminders on'), findsOneWidget);
+  });
+
+  testWidgets('names 10:00pm when the late evening reminder is chosen',
+      (tester) async {
+    final settings = await makeSettings(remindersEnabled: true);
+    await settings.setReminderTime(ReminderTime.lateEvening);
+
+    await tester.pumpWidget(buildApp(settings, sync()));
+
+    expect(
+      find.textContaining('10:00pm on the day before'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('says reminders only know the published dates', (tester) async {

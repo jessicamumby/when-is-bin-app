@@ -368,7 +368,27 @@ void main() {
       expect(find.text('When should we remind you?'), findsOneWidget);
       expect(find.text('Morning before (9:00am)'), findsOneWidget);
       expect(find.text('Evening before (7:00pm)'), findsOneWidget);
+      expect(find.text('Late evening before (10:00pm)'), findsOneWidget);
       expect(find.text('Turn on reminders'), findsOneWidget);
+    });
+
+    testWidgets('choosing late evening saves it as the reminder time', (
+      tester,
+    ) async {
+      final settings = await makeSettings();
+      final lookup = await lookupWithSchedule();
+
+      await tester.pumpWidget(
+        buildApp(lookup, settings, FakeNotificationService()),
+      );
+
+      await tester.ensureVisible(find.text('Late evening before (10:00pm)'));
+      await tester.tap(find.text('Late evening before (10:00pm)'));
+      await tester.ensureVisible(find.text('Turn on reminders'));
+      await tester.tap(find.text('Turn on reminders'));
+      await tester.pump();
+
+      expect(settings.reminderTime, ReminderTime.lateEvening);
     });
 
     testWidgets('turning on reminders saves the time, requests permission, '

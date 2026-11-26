@@ -431,9 +431,7 @@ class _ReminderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final timeLabel = reminderTime == ReminderTime.morning
-        ? '9:00am on the day before'
-        : '7:00pm on the day before';
+    final timeLabel = '${reminderTime.clock} on the day before';
     final canSchedule = !provisional;
     final muted = AppColors.mutedFor(Theme.of(context).brightness);
 

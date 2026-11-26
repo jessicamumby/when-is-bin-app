@@ -24,6 +24,39 @@ void main() {
       expect(result, DateTime(2026, 9, 9, 9, 0));
     });
 
+    test('returns the late-evening-before time for the next collection', () {
+      final result = ReminderScheduler.nextReminder(
+        collectionDate: DateTime(2026, 9, 10),
+        now: DateTime(2026, 9, 1),
+        reminderTime: ReminderTime.lateEvening,
+      );
+
+      expect(result, DateTime(2026, 9, 9, 22, 0));
+    });
+
+    test('still offers the late evening reminder after the evening one has '
+        'passed', () {
+      // 8pm the day before: too late for 7pm, in time for 10pm.
+      final now = DateTime(2026, 9, 9, 20, 0);
+
+      expect(
+        ReminderScheduler.nextReminder(
+          collectionDate: DateTime(2026, 9, 10),
+          now: now,
+          reminderTime: ReminderTime.evening,
+        ),
+        isNull,
+      );
+      expect(
+        ReminderScheduler.nextReminder(
+          collectionDate: DateTime(2026, 9, 10),
+          now: now,
+          reminderTime: ReminderTime.lateEvening,
+        ),
+        DateTime(2026, 9, 9, 22, 0),
+      );
+    });
+
     test('skips a collection that is already past', () {
       // Collection on 2026-09-10, but "now" is 2026-09-11 (after it).
       final result = ReminderScheduler.nextReminder(

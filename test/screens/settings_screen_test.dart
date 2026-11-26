@@ -44,6 +44,25 @@ void main() {
     expect(textColour(tester, find.text('No address saved.')), AppColors.muted);
   });
 
+  testWidgets('offers morning, evening and late evening reminders',
+      (tester) async {
+    await tester.pumpWidget(await app(AppTheme.light));
+
+    expect(find.text('Morning before (9:00am)'), findsOneWidget);
+    expect(find.text('Evening before (7:00pm)'), findsOneWidget);
+    expect(find.text('Late evening before (10:00pm)'), findsOneWidget);
+  });
+
+  testWidgets('choosing late evening stores it', (tester) async {
+    await tester.pumpWidget(await app(AppTheme.light));
+
+    await tester.tap(find.text('Late evening before (10:00pm)'));
+    await tester.pump();
+
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getString('reminder_time'), 'lateEvening');
+  });
+
   testWidgets('offers About and opens it', (tester) async {
     await tester.pumpWidget(await app(AppTheme.light));
 

@@ -42,14 +42,11 @@ class SettingsScreen extends StatelessWidget {
             },
             child: Column(
               children: [
-                RadioListTile<ReminderTime>(
-                  title: const Text('Morning before (9:00am)'),
-                  value: ReminderTime.morning,
-                ),
-                RadioListTile<ReminderTime>(
-                  title: const Text('Evening before (7:00pm)'),
-                  value: ReminderTime.evening,
-                ),
+                for (final time in ReminderTime.values)
+                  RadioListTile<ReminderTime>(
+                    title: Text(time.optionLabel),
+                    value: time,
+                  ),
               ],
             ),
           ),
